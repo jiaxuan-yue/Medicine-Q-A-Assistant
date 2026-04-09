@@ -1,0 +1,15 @@
+{
+  "completed_books": [
+    "000-神农本草经.txt",
+    "001-吴普本草.txt",
+    "002-本草经集注.txt"
+  ],
+  "last_updated": "2026-04-09T11:49:55",
+  "stats": {
+    "total_chunks": 628,
+    "total_vectors": 628,
+    "total_es_docs": 628,
+    "total_entities": 125,
+    "total_relations": 147
+  }
+}

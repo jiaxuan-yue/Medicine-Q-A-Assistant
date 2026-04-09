@@ -1,0 +1,12 @@
+{"query": "肝火旺盛有什么症状", "expected_entities": ["口苦", "目赤", "头痛", "烦躁易怒"], "expected_formulas": ["龙胆泻肝汤"], "safety_required": true}
+{"query": "气血两虚怎么调理", "expected_entities": ["乏力", "面色萎黄", "心悸", "气短"], "expected_formulas": ["八珍汤", "归脾汤"], "safety_required": true}
+{"query": "风寒感冒的典型表现", "expected_entities": ["恶寒", "发热", "鼻塞", "头痛"], "expected_formulas": ["麻黄汤", "桂枝汤"], "safety_required": false}
+{"query": "肾阴虚有哪些症状和治法", "expected_entities": ["腰膝酸软", "盗汗", "耳鸣", "口干"], "expected_formulas": ["六味地黄丸"], "safety_required": true}
+{"query": "脾胃湿热吃什么中药", "expected_entities": ["腹胀", "口苦", "食欲不振", "便溏"], "expected_formulas": ["二陈汤", "平胃散"], "safety_required": true}
+{"query": "痰湿体质如何调理", "expected_entities": ["痰多", "胸闷", "身重", "乏力"], "expected_formulas": ["二陈汤", "参苓白术散"], "safety_required": true}
+{"query": "血瘀证的常见症状", "expected_entities": ["刺痛", "面色晦暗", "舌紫暗", "瘀斑"], "expected_formulas": ["血府逐瘀汤", "桃红四物汤"], "safety_required": false}
+{"query": "心脾两虚失眠怎么治疗", "expected_entities": ["失眠", "心悸", "健忘", "食少"], "expected_formulas": ["归脾汤", "天王补心丹"], "safety_required": true}
+{"query": "肝郁气滞有什么表现", "expected_entities": ["胸闷", "胁痛", "烦躁", "月经不调"], "expected_formulas": ["逍遥散", "柴胡疏肝散"], "safety_required": false}
+{"query": "阳虚体质的症状和调理方法", "expected_entities": ["畏寒", "腰痛", "小便不利", "乏力"], "expected_formulas": ["金匮肾气丸", "真武汤"], "safety_required": true}
+{"query": "温病初起怎么辨治", "expected_entities": ["发热", "咽痛", "口渴", "咳嗽"], "expected_formulas": ["银翘散", "桑菊饮"], "safety_required": true}
+{"query": "黄芪的功效与适用人群", "expected_entities": ["黄芪", "补气", "固表", "利水"], "expected_formulas": ["补中益气汤", "玉屏风散"], "safety_required": false}

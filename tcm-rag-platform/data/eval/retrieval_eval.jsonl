@@ -1,0 +1,20 @@
+{"query": "失眠多梦口苦烦躁怎么办", "gold_doc_ids": ["doc_001", "doc_003"], "gold_entities": ["失眠", "口苦", "肝火旺盛"]}
+{"query": "咳嗽痰多是什么原因", "gold_doc_ids": ["doc_005", "doc_012"], "gold_entities": ["咳嗽", "痰多", "痰湿"]}
+{"query": "头痛眩晕耳鸣怎么辨证", "gold_doc_ids": ["doc_008", "doc_015"], "gold_entities": ["头痛", "眩晕", "耳鸣", "肝阳上亢"]}
+{"query": "脾虚乏力食少腹胀吃什么", "gold_doc_ids": ["doc_002", "doc_010"], "gold_entities": ["脾虚", "乏力", "食少", "腹胀"]}
+{"query": "当归有什么功效", "gold_doc_ids": ["doc_020", "doc_025"], "gold_entities": ["当归", "补血", "活血"]}
+{"query": "桂枝汤的组成和用法", "gold_doc_ids": ["doc_030", "doc_031"], "gold_entities": ["桂枝汤", "桂枝", "白芍", "甘草", "生姜", "大枣"]}
+{"query": "月经不调痛经怎么调理", "gold_doc_ids": ["doc_040", "doc_042"], "gold_entities": ["月经不调", "痛经", "气滞血瘀"]}
+{"query": "心悸怔忡是什么病", "gold_doc_ids": ["doc_050", "doc_053"], "gold_entities": ["心悸", "怔忡", "心血不足"]}
+{"query": "发热恶寒身痛是风寒还是风热", "gold_doc_ids": ["doc_060", "doc_063"], "gold_entities": ["发热", "恶寒", "风寒", "风热"]}
+{"query": "黄芪和人参有什么区别", "gold_doc_ids": ["doc_070", "doc_072"], "gold_entities": ["黄芪", "人参", "补气"]}
+{"query": "胃痛反酸嗳气是什么证", "gold_doc_ids": ["doc_080", "doc_082"], "gold_entities": ["胃痛", "反酸", "嗳气", "肝胃不和"]}
+{"query": "水肿小便不利怎么治", "gold_doc_ids": ["doc_090", "doc_091"], "gold_entities": ["水肿", "小便不利", "肾阳虚"]}
+{"query": "六味地黄丸适合什么人吃", "gold_doc_ids": ["doc_100", "doc_102"], "gold_entities": ["六味地黄丸", "肾阴虚", "腰膝酸软"]}
+{"query": "便秘大便干燥怎么办", "gold_doc_ids": ["doc_110", "doc_112"], "gold_entities": ["便秘", "大便燥结", "津液不足"]}
+{"query": "自汗盗汗是什么原因", "gold_doc_ids": ["doc_120", "doc_122"], "gold_entities": ["自汗", "盗汗", "气虚", "阴虚"]}
+{"query": "小柴胡汤治什么病", "gold_doc_ids": ["doc_130", "doc_132"], "gold_entities": ["小柴胡汤", "少阳病", "寒热往来"]}
+{"query": "咽痛发热怕冷是什么感冒", "gold_doc_ids": ["doc_003", "doc_060"], "gold_entities": ["咽痛", "发热", "风热感冒"]}
+{"query": "腰痛膝软遗精怎么调理", "gold_doc_ids": ["doc_140", "doc_142"], "gold_entities": ["腰痛", "遗精", "肾虚"]}
+{"query": "黄疸发黄是肝病吗", "gold_doc_ids": ["doc_150", "doc_152"], "gold_entities": ["黄疸", "发黄", "湿热"]}
+{"query": "烦躁易怒口干目赤是什么证型", "gold_doc_ids": ["doc_001", "doc_160"], "gold_entities": ["烦躁", "口干", "目赤", "肝火上炎"]}
