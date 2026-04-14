@@ -13,6 +13,9 @@ class ChatSessionOut(BaseModel):
     session_id: str
     title: str
     summary: str | None
+    case_profile_id: int | None = None
+    case_profile_name: str | None = None
+    case_profile_summary: str | None = None
     created_at: str
     updated_at: str
 
@@ -36,3 +39,4 @@ class ChatQueryRequest(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     title: str | None = None
+    case_profile_id: int

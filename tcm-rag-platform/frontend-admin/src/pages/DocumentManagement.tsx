@@ -61,37 +61,59 @@ export default function DocumentManagement() {
   };
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-        }}
-      >
-        <h2 style={{ margin: 0 }}>文档管理</h2>
-        <Upload {...uploadProps}>
-          <Button type="primary" icon={<UploadOutlined />}>
-            上传文档
-          </Button>
-        </Upload>
+    <div className="admin-page">
+      <div className="admin-page-header">
+        <div>
+          <h1>文档管理</h1>
+          <p>集中管理上传、状态流转和入库节奏，让知识资产增长与审核节奏保持可控。</p>
+        </div>
+        <div className="admin-header-actions">
+          <Upload {...uploadProps}>
+            <Button type="primary" icon={<UploadOutlined />}>
+              上传文档
+            </Button>
+          </Upload>
+        </div>
       </div>
-      <Tabs
-        activeKey={statusFilter}
-        onChange={handleTabChange}
-        items={statusTabs}
-        style={{ marginBottom: 16 }}
-      />
-      <DocumentTable
-        documents={documents}
-        total={documentsTotal}
-        loading={loading}
-        page={page}
-        pageSize={pageSize}
-        onPageChange={handlePageChange}
-        onAction={handleAction}
-      />
+
+      <div className="admin-inline-metrics">
+        <div className="admin-inline-metric">
+          <span>当前文档数</span>
+          <strong>{documentsTotal}</strong>
+        </div>
+        <div className="admin-inline-metric">
+          <span>筛选状态</span>
+          <strong>{statusTabs.find((item) => item.key === statusFilter)?.label ?? '全部'}</strong>
+        </div>
+        <div className="admin-inline-metric">
+          <span>运营目标</span>
+          <strong>稳定入库 / 清晰审核</strong>
+        </div>
+      </div>
+
+      <div className="admin-table-card">
+        <div className="admin-toolbar">
+          <div className="admin-toolbar-left">
+            <div className="section-badge">Document Queue</div>
+          </div>
+          <div className="admin-toolbar-right">支持异步入库、索引构建与状态追踪</div>
+        </div>
+        <Tabs
+          activeKey={statusFilter}
+          onChange={handleTabChange}
+          items={statusTabs}
+          style={{ marginBottom: 16 }}
+        />
+        <DocumentTable
+          documents={documents}
+          total={documentsTotal}
+          loading={loading}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          onAction={handleAction}
+        />
+      </div>
     </div>
   );
 }

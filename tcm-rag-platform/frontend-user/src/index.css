@@ -1,16 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&family=ZCOOL+XiaoWei&display=swap');
+
+:root {
+  --paper: #f4eee2;
+  --paper-soft: #fbf8f1;
+  --paper-deep: #eadfc8;
+  --ink: #1e342d;
+  --ink-soft: #59685f;
+  --line: rgba(30, 52, 45, 0.12);
+  --sage: #285d4c;
+  --sage-deep: #17392f;
+  --sage-light: #d6e6de;
+  --cinnabar: #b8593d;
+  --gold: #c69654;
+  --shadow-xl: 0 32px 80px rgba(28, 43, 38, 0.16);
+  --shadow-lg: 0 18px 48px rgba(28, 43, 38, 0.12);
+  --shadow-sm: 0 10px 24px rgba(28, 43, 38, 0.08);
+  color: var(--ink);
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--paper);
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html,
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  min-height: 100%;
+}
+
+body {
+  color: var(--ink);
+  font-family: 'Noto Sans SC', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background:
+    radial-gradient(circle at top left, rgba(198, 150, 84, 0.18), transparent 34%),
+    radial-gradient(circle at 85% 15%, rgba(40, 93, 76, 0.12), transparent 22%),
+    linear-gradient(180deg, #f8f3e8 0%, #f1e8d7 55%, #eee5d5 100%);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.32;
+  background:
+    linear-gradient(90deg, transparent 0, rgba(23, 57, 47, 0.03) 48%, transparent 100%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.14) 0,
+      rgba(255, 255, 255, 0.14) 1px,
+      transparent 1px,
+      transparent 9px
+    );
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 18px;
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  border-radius: 28px;
+  pointer-events: none;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
 }
 
 #root {
   min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+}
+
+.section-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(30, 52, 45, 0.14);
+  background: rgba(255, 253, 248, 0.72);
+  color: var(--sage-deep);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.display-title {
+  font-family: 'ZCOOL XiaoWei', 'Noto Serif SC', serif;
+  letter-spacing: 0.02em;
 }

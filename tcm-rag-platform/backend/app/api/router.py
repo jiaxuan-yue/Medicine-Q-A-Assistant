@@ -2,12 +2,13 @@
 
 from fastapi import APIRouter
 
-from app.api.v1 import admin, auth, chats, documents, evaluation, feedback, knowledge_graph, rag, users
+from app.api.v1 import admin, auth, case_profiles, chats, documents, evaluation, feedback, knowledge_graph, rag, users
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["认证"])
 api_router.include_router(users.router, prefix="/users", tags=["用户"])
+api_router.include_router(case_profiles.router, prefix="/case-profiles", tags=["角色档案"])
 api_router.include_router(chats.router, prefix="/chats", tags=["对话"])
 api_router.include_router(rag.router, prefix="/rag", tags=["RAG"])
 api_router.include_router(documents.router, prefix="/documents", tags=["文档管理"])

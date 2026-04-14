@@ -12,7 +12,6 @@ const MAX_SIZE_MB = 10;
 
 const UploadImagePanel: React.FC<UploadImagePanelProps> = ({ onImageSelected }) => {
   const [preview, setPreview] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const beforeUpload = (file: RcFile) => {
     if (!ACCEPT_TYPES.includes(file.type)) {
@@ -26,7 +25,6 @@ const UploadImagePanel: React.FC<UploadImagePanelProps> = ({ onImageSelected }) 
 
     const url = URL.createObjectURL(file);
     setPreview(url);
-    setSelectedFile(file);
     onImageSelected(file);
 
     // Prevent auto upload
@@ -38,7 +36,6 @@ const UploadImagePanel: React.FC<UploadImagePanelProps> = ({ onImageSelected }) 
       URL.revokeObjectURL(preview);
     }
     setPreview(null);
-    setSelectedFile(null);
   };
 
   return (

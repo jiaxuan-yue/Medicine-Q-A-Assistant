@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Table, Select, Input, Space, App } from 'antd';
+import { Table, Select, Input, App } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { User } from '../types';
 import { useAdminStore } from '../stores/adminStore';
@@ -87,44 +87,70 @@ export default function UserManagement() {
   ];
 
   return (
-    <div>
-      <h2 style={{ marginBottom: 16 }}>用户管理</h2>
-      <Space style={{ marginBottom: 16 }} wrap>
-        <Input.Search
-          placeholder="搜索用户名或邮箱"
-          allowClear
-          onSearch={setSearch}
-          onChange={(e) => !e.target.value && setSearch('')}
-          style={{ width: 240 }}
+    <div className="admin-page">
+      <div className="admin-page-header">
+        <div>
+          <h1>用户管理</h1>
+          <p>快速查看用户规模、角色分布和权限调整入口，保持管理边界足够清晰。</p>
+        </div>
+      </div>
+
+      <div className="admin-inline-metrics">
+        <div className="admin-inline-metric">
+          <span>当前用户数</span>
+          <strong>{usersTotal}</strong>
+        </div>
+        <div className="admin-inline-metric">
+          <span>角色筛选</span>
+          <strong>{roleOptions.find((item) => item.value === roleFilter)?.label ?? '全部角色'}</strong>
+        </div>
+        <div className="admin-inline-metric">
+          <span>运营重点</span>
+          <strong>权限边界清晰</strong>
+        </div>
+      </div>
+
+      <div className="admin-table-card">
+        <div className="admin-toolbar">
+          <div className="admin-toolbar-left">
+            <Input.Search
+              placeholder="搜索用户名或邮箱"
+              allowClear
+              onSearch={setSearch}
+              onChange={(e) => !e.target.value && setSearch('')}
+              style={{ width: 260 }}
+            />
+            <Select
+              placeholder="角色筛选"
+              allowClear
+              options={roleOptions}
+              onChange={setRoleFilter}
+              style={{ width: 160 }}
+            />
+          </div>
+          <div className="admin-toolbar-right">支持按角色检索和直接调整权限</div>
+        </div>
+        <Table<User>
+          rowKey="id"
+          columns={columns}
+          dataSource={filteredUsers}
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize,
+            total: usersTotal,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p, ps) => {
+              setPage(p);
+              setPageSize(ps);
+            },
+          }}
+          scroll={{ x: 800 }}
+          size="middle"
         />
-        <Select
-          placeholder="角色筛选"
-          allowClear
-          options={roleOptions}
-          onChange={setRoleFilter}
-          style={{ width: 140 }}
-        />
-      </Space>
-      <Table<User>
-        rowKey="id"
-        columns={columns}
-        dataSource={filteredUsers}
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize,
-          total: usersTotal,
-          showSizeChanger: true,
-          showQuickJumper: true,
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: (p, ps) => {
-            setPage(p);
-            setPageSize(ps);
-          },
-        }}
-        scroll={{ x: 800 }}
-        size="middle"
-      />
+      </div>
     </div>
   );
 }

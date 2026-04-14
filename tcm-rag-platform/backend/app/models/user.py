@@ -29,3 +29,14 @@ class User(Base):
     roles = relationship("Role", secondary="user_roles", back_populates="users")
     sessions = relationship("ChatSession", back_populates="user")
     documents = relationship("Document", back_populates="uploader")
+    case_profile = relationship(
+        "UserCaseProfile",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    case_profiles = relationship(
+        "CaseProfile",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

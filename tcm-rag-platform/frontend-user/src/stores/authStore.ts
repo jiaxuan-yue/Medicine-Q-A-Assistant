@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { authApi } from '../api/auth';
 import type { User, LoginRequest, RegisterRequest } from '../types';
+import { useCaseProfilesStore } from './caseProfilesStore';
 
 interface AuthState {
   user: User | null;
@@ -29,6 +30,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await authApi.login(data);
       const tokens = res.data.data;
+      useCaseProfilesStore.getState().reset();
       sessionStorage.setItem('access_token', tokens.access_token);
       sessionStorage.setItem('refresh_token', tokens.refresh_token);
       set({
@@ -48,6 +50,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await authApi.register(data);
       const tokens = res.data.data;
+      useCaseProfilesStore.getState().reset();
       sessionStorage.setItem('access_token', tokens.access_token);
       sessionStorage.setItem('refresh_token', tokens.refresh_token);
       set({
@@ -68,6 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // ignore
     }
+    useCaseProfilesStore.getState().reset();
     sessionStorage.clear();
     set({
       user: null,

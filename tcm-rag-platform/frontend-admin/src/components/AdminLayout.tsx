@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layout, Menu, theme, Dropdown, Button, Avatar } from 'antd';
+import { Layout, Menu, Dropdown, Button, Avatar } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -72,9 +72,8 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
-  const {
-    token: { colorBgContainer, borderRadiusLG },
-  } = theme.useToken();
+  const currentItem =
+    menuItems.find((item) => location.pathname.startsWith(String(item.key))) ?? menuItems[0];
 
   const handleMenuClick = (info: { key: string }) => {
     navigate(info.key);
@@ -95,8 +94,9 @@ export default function AdminLayout() {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="admin-app-shell">
       <Sider
+        className="admin-sider"
         trigger={null}
         collapsible
         collapsed={collapsed}
@@ -111,68 +111,65 @@ export default function AdminLayout() {
           bottom: 0,
         }}
       >
-        <div
-          style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontSize: collapsed ? 14 : 16,
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            padding: '0 16px',
-          }}
-        >
-          {collapsed ? '中医' : '中医药知识服务管理'}
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={handleMenuClick}
-        />
-      </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 220, transition: 'margin-left 0.2s' }}>
-        <Header
-          style={{
-            padding: '0 24px',
-            background: colorBgContainer,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: '0 1px 4px rgba(0, 0, 0, 0.08)',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}
-        >
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: 16, width: 48, height: 48 }}
+        <div className="admin-sider-inner">
+          <div className="admin-sider-brand">
+            <div className="admin-sider-mark">岐</div>
+            {!collapsed && (
+              <div className="admin-sider-brand-copy">
+                <span className="admin-sider-eyebrow">TCM Ops Console</span>
+                <strong className="admin-sider-title">知识服务管理台</strong>
+                <span className="admin-sider-subtitle">RAG · 图谱 · 评测 · 反馈</span>
+              </div>
+            )}
+          </div>
+          <div className="admin-sider-divider" />
+          <Menu
+            className="admin-sider-menu"
+            theme="dark"
+            mode="inline"
+            selectedKeys={[location.pathname]}
+            items={menuItems}
+            onClick={handleMenuClick}
           />
-          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Avatar icon={<UserOutlined />} />
-              <span>{user?.username ?? '管理员'}</span>
+          {!collapsed && (
+            <div className="admin-sider-footer">
+              当前视图覆盖用户、知识资产、评测和反馈闭环，方便从运营视角统一判断平台状态。
             </div>
-          </Dropdown>
+          )}
+        </div>
+      </Sider>
+      <Layout className="admin-main" style={{ marginLeft: collapsed ? 80 : 220 }}>
+        <Header className="admin-topbar">
+          <div className="admin-topbar-left">
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              style={{ fontSize: 16, width: 48, height: 48 }}
+            />
+            <div className="admin-topbar-copy">
+              <span className="admin-topbar-eyebrow">Operations Workspace</span>
+              <strong>{String(currentItem.label)}</strong>
+            </div>
+          </div>
+          <div className="admin-topbar-right">
+            <div className="admin-topbar-status">知识资产 / 质量闭环 / 平台运营</div>
+            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+              <div className="admin-user-pill" style={{ cursor: 'pointer' }}>
+                <Avatar icon={<UserOutlined />} style={{ background: '#0f5f55' }} />
+                <div className="admin-user-copy">
+                  <strong>{user?.username ?? '管理员'}</strong>
+                  <span>管理端登录</span>
+                </div>
+              </div>
+            </Dropdown>
+          </div>
         </Header>
-        <Content
-          style={{
-            margin: 24,
-            padding: 24,
-            background: colorBgContainer,
-            borderRadius: borderRadiusLG,
-            minHeight: 280,
-          }}
-        >
-          <Outlet />
-        </Content>
+        <div className="admin-content-wrap">
+          <Content className="admin-surface admin-content">
+            <Outlet />
+          </Content>
+        </div>
       </Layout>
     </Layout>
   );

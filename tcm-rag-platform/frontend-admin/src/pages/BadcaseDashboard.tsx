@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Table, Select, Tag, Modal, Card, Statistic, Row, Col, Space, Spin, App, Empty, DatePicker,
+  Table, Select, Tag, Modal, Card, Statistic, Row, Col, Space, Spin, App, DatePicker,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { feedbackApi } from '../api/feedback';

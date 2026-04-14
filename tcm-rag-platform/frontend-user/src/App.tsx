@@ -5,7 +5,6 @@ import {
   Route,
   Navigate,
   useLocation,
-  useNavigate,
 } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -14,6 +13,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ChatList from './pages/ChatList';
 import ChatDetail from './pages/ChatDetail';
+import CaseProfilesGuard from './components/CaseProfilesGuard';
 
 // Route guard component
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -51,7 +51,51 @@ const AuthHydrator: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 
 const App: React.FC = () => {
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        token: {
+          colorPrimary: '#285d4c',
+          colorInfo: '#285d4c',
+          colorSuccess: '#285d4c',
+          colorWarning: '#c69654',
+          colorError: '#b8593d',
+          colorTextBase: '#1e342d',
+          colorBgBase: '#fbf8f1',
+          colorBorder: 'rgba(30, 52, 45, 0.12)',
+          fontFamily: "'Noto Sans SC', sans-serif",
+          borderRadius: 18,
+          borderRadiusLG: 24,
+          boxShadowSecondary: '0 18px 48px rgba(28, 43, 38, 0.12)',
+        },
+        components: {
+          Layout: {
+            bodyBg: 'transparent',
+            headerBg: 'transparent',
+            footerBg: 'transparent',
+          },
+          Button: {
+            controlHeight: 44,
+            colorPrimary: '#285d4c',
+            colorPrimaryHover: '#1f5140',
+            colorPrimaryActive: '#17392f',
+            primaryShadow: 'none',
+            fontWeight: 600,
+          },
+          Input: {
+            activeBorderColor: '#285d4c',
+            hoverBorderColor: '#285d4c',
+          },
+          Card: {
+            borderRadiusLG: 28,
+          },
+          Collapse: {
+            headerBg: 'rgba(40, 93, 76, 0.04)',
+            contentBg: 'rgba(255, 253, 248, 0.8)',
+          },
+        },
+      }}
+    >
       <BrowserRouter>
         <AuthHydrator>
           <Routes>
@@ -76,7 +120,9 @@ const App: React.FC = () => {
               path="/chats"
               element={
                 <RequireAuth>
-                  <ChatList />
+                  <CaseProfilesGuard>
+                    <ChatList />
+                  </CaseProfilesGuard>
                 </RequireAuth>
               }
             />
@@ -84,7 +130,9 @@ const App: React.FC = () => {
               path="/chats/:sessionId"
               element={
                 <RequireAuth>
-                  <ChatDetail />
+                  <CaseProfilesGuard>
+                    <ChatDetail />
+                  </CaseProfilesGuard>
                 </RequireAuth>
               }
             />

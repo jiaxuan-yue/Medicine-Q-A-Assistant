@@ -18,6 +18,7 @@ from app.core.logger import get_logger, setup_logging, trace_id_ctx
 from app.core.middleware import RequestLoggingMiddleware, TraceIDMiddleware
 from app.db.session import async_session_factory, init_db
 from app.integrations.es_client import es_client
+from app.integrations.llm_client import llm_client
 from app.integrations.neo4j_client import neo4j_client
 from app.integrations.vector_store import vector_store
 from app.services.bootstrap_service import bootstrap_service
@@ -36,6 +37,19 @@ async def lifespan(app: FastAPI):
     # ── 启动 ──────────────────────────────────────────────
     setup_logging(level="DEBUG" if settings.DEBUG else "INFO")
     logger.info("%s v%s 正在启动", settings.APP_NAME, "1.0.0")
+    llm_status = llm_client.get_config_status()
+    log_method = logger.info if llm_status["api_key_status"] == "configured" else logger.warning
+    log_method(
+        "LLM 配置状态: provider=%s, api_key_status=%s, api_key=%s, chat_model=%s, rewrite_model=%s, embedding_model=%s, reranker_model=%s, timeout=%ss",
+        llm_status["provider"],
+        llm_status["api_key_status"],
+        llm_status["api_key_masked"],
+        llm_status["chat_model"],
+        llm_status["rewrite_model"],
+        llm_status["embedding_model"],
+        llm_status["reranker_model"],
+        llm_status["timeout_seconds"],
+    )
 
     await init_db()
     async with async_session_factory() as session:

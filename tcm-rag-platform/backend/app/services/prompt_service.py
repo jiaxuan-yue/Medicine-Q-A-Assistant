@@ -30,6 +30,7 @@ class PromptService:
         user_query: str,
         context_chunks: list[dict],
         conversation_history: list[dict] | None = None,
+        case_profile_summary: str | None = None,
     ) -> list[dict]:
         """Build the messages list ready to send to the LLM.
 
@@ -63,7 +64,9 @@ class PromptService:
                 messages.append({"role": msg["role"], "content": msg["content"]})
 
         # user turn with embedded context
+        profile_block = case_profile_summary or "（当前未提供基础病例信息）"
         user_content = (
+            f"## 用户基础病例\n{profile_block}\n\n"
             f"## 检索到的参考内容\n{context_block}\n\n"
             f"## 用户问题\n{user_query}"
         )

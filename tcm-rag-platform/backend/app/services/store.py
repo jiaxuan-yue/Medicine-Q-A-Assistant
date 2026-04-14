@@ -36,6 +36,9 @@ class SessionRecord:
     user_id: int
     title: str
     summary: str | None = None
+    case_profile_id: int | None = None
+    case_profile_name: str | None = None
+    case_profile_summary: str | None = None
     created_at: str = field(default_factory=utcnow_iso)
     updated_at: str = field(default_factory=utcnow_iso)
 
@@ -211,11 +214,21 @@ class InMemoryStore:
         self._user_id_seq += 1
         return user
 
-    def create_session(self, user_id: int, title: str = "新对话") -> SessionRecord:
+    def create_session(
+        self,
+        user_id: int,
+        title: str = "新对话",
+        case_profile_id: int | None = None,
+        case_profile_name: str | None = None,
+        case_profile_summary: str | None = None,
+    ) -> SessionRecord:
         session = SessionRecord(
             session_id=str(uuid4()),
             user_id=user_id,
             title=title,
+            case_profile_id=case_profile_id,
+            case_profile_name=case_profile_name,
+            case_profile_summary=case_profile_summary,
         )
         self.sessions[session.session_id] = session
         self.session_messages[session.session_id] = []

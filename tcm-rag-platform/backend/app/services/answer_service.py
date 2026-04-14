@@ -27,6 +27,7 @@ async def stream_answer(
     full_answer_parts: list[str] = []
     token_count = 0
     start_time = time.perf_counter()
+    generation_failed = False
 
     try:
         async for chunk_text in llm_client.chat_stream(messages):
@@ -36,10 +37,18 @@ async def stream_answer(
 
     except Exception as exc:
         logger.error("LLM streaming failed: %s", exc, exc_info=True)
-        error_msg = (
-            "抱歉，知识检索助手暂时无法生成回答，请稍后重试。"
-            "如有紧急健康问题，请及时就医。"
-        )
+        generation_failed = True
+        exc_text = str(exc)
+        if "InvalidApiKey" in exc_text or "API key" in exc_text:
+            error_msg = (
+                "当前大模型服务配置异常：DashScope API Key 无效或未配置。"
+                "请在后端 .env 中设置有效的 DASHSCOPE_API_KEY 后重试。"
+            )
+        else:
+            error_msg = (
+                "抱歉，知识检索助手暂时无法生成回答，请稍后重试。"
+                "如有紧急健康问题，请及时就医。"
+            )
         yield {"event": "chunk", "data": {"content": error_msg}}
         full_answer_parts.append(error_msg)
 
@@ -48,7 +57,7 @@ async def stream_answer(
 
     # Build citations from chunks_used vs actual answer
     citations: list[dict] = []
-    if chunks_used:
+    if chunks_used and not generation_failed:
         from app.services.citation_service import citation_service
         citations = citation_service.build_citations(chunks_used, full_answer)
 

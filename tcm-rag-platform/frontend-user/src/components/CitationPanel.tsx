@@ -1,5 +1,5 @@
 import React from 'react';
-import { Collapse, Tag, Typography, Empty } from 'antd';
+import { Collapse, Tag, Typography } from 'antd';
 import { BookOutlined } from '@ant-design/icons';
 import type { Citation } from '../types';
 
@@ -21,32 +21,25 @@ const CitationPanel: React.FC<CitationPanelProps> = ({ citations }) => {
     return {
       key: String(index),
       label: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <BookOutlined style={{ color: '#1890ff' }} />
-          <Text strong style={{ flex: 1 }}>
-            {cite.doc_title || '未知文献'}
-          </Text>
+        <div className="citation-panel-item-title">
+          <BookOutlined style={{ color: 'var(--cinnabar)' }} />
+          <div className="citation-panel-item-copy">
+            <Text strong>{cite.doc_title || '未知文献'}</Text>
+            <span>{shortExcerpt}</span>
+          </div>
           {cite.chunk_id && (
-            <Tag color="blue" style={{ marginRight: 0 }}>
+            <Tag color="volcano" style={{ marginRight: 0 }}>
               {cite.chunk_id}
             </Tag>
           )}
         </div>
       ),
       children: (
-        <div>
-          <Paragraph
-            style={{
-              background: '#fafafa',
-              padding: 12,
-              borderRadius: 6,
-              borderLeft: '3px solid #1890ff',
-              margin: 0,
-            }}
-          >
+        <div className="citation-panel-body">
+          <Paragraph className="citation-panel-excerpt">
             {excerptText}
           </Paragraph>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {cite.doc_id && (
               <Tag color="geekblue">文献ID: {cite.doc_id}</Tag>
             )}
@@ -56,24 +49,20 @@ const CitationPanel: React.FC<CitationPanelProps> = ({ citations }) => {
           </div>
         </div>
       ),
-      extra: (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {shortExcerpt}
-        </Text>
-      ),
     };
   });
 
   return (
-    <div className="citation-panel" style={{ marginTop: 8 }}>
-      <Text type="secondary" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>
-        📚 引用来源 ({citations.length})
-      </Text>
+    <div className="citation-panel">
+      <div className="citation-panel-title">
+        <BookOutlined />
+        <Text type="secondary">引用依据</Text>
+        <em>{citations.length} 条</em>
+      </div>
       <Collapse
         size="small"
         items={items}
         bordered={false}
-        style={{ background: 'transparent' }}
       />
     </div>
   );

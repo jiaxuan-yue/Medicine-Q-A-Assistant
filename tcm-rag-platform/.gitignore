@@ -1,0 +1,58 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# Databases / runtime files
+*.db
+*.sqlite
+*.sqlite3
+*.pid
+
+# Build / package artifacts
+build/
+dist/
+*.egg-info/
+
+# Frontend
+frontend-user/node_modules/
+frontend-user/dist/
+frontend-admin/node_modules/
+frontend-admin/dist/
+
+# Generated data / uploads / indexes
+data/raw/uploads/
+data/processed/
+backend/data/raw/uploads/
+backend/data/processed/
+backend/data/faiss/
+
+# Notebook / temp
+*.ipynb_checkpoints
+tmp/
+temp/

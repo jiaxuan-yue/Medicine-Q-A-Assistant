@@ -16,14 +16,15 @@ router = APIRouter()
 
 @router.post("")
 async def create_session(
-    payload: CreateSessionRequest | None = None,
+    payload: CreateSessionRequest,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     data = await chat_service.create_session(
         db,
         user_id=int(current_user["sub"]),
-        title=payload.title if payload else None,
+        title=payload.title,
+        case_profile_id=payload.case_profile_id,
     )
     return success_response(data=data, message="会话创建成功")
 

@@ -98,10 +98,12 @@ export default function DocumentTable({
       width: 140,
       render: (_, record) => (
         <span>
-          <a onClick={() => onAction?.('view', record)} style={{ marginRight: 12 }}>
+          <button type="button" className="admin-table-link" onClick={() => onAction?.('view', record)}>
             查看
-          </a>
-          <a onClick={() => onAction?.('reindex', record)}>重索引</a>
+          </button>
+          <button type="button" className="admin-table-link" onClick={() => onAction?.('reindex', record)}>
+            重索引
+          </button>
         </span>
       ),
     },

@@ -58,18 +58,18 @@ function renderStageData(data: unknown) {
                   score: {Number(item.score).toFixed(4)}
                 </Tag>
               )}
-              {item.source && (
+              {Boolean(item.source) && (
                 <Tag color="green" style={{ marginLeft: 4 }}>
-                  {item.source as string}
+                  {String(item.source)}
                 </Tag>
               )}
-              {item.content && (
+              {typeof item.content === 'string' && (
                 <Paragraph
                   type="secondary"
                   ellipsis={{ rows: 2 }}
                   style={{ margin: '4px 0 0', fontSize: 12 }}
                 >
-                  {item.content as string}
+                  {item.content}
                 </Paragraph>
               )}
             </div>

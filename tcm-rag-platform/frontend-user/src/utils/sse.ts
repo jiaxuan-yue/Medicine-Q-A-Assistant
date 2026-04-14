@@ -33,7 +33,24 @@ export async function connectSSE(
   });
 
   if (!response.ok) {
-    throw new Error(`SSE request failed: ${response.status}`);
+    let errorMessage = `SSE request failed: ${response.status}`;
+
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        errorMessage = data?.message || errorMessage;
+      } else {
+        const text = await response.text();
+        if (text) {
+          errorMessage = text;
+        }
+      }
+    } catch {
+      // ignore parse failures and keep the status-based fallback
+    }
+
+    throw new Error(errorMessage);
   }
 
   const reader = response.body?.getReader();

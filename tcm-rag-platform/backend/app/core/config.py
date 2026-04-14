@@ -4,6 +4,7 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _BASE_DIR = Path(__file__).resolve().parents[3]
@@ -85,6 +86,20 @@ class Settings(BaseSettings):
     RATE_LIMIT_USER: int = 60       # req/min
     RATE_LIMIT_QA: int = 10         # req/min
     RATE_LIMIT_ADMIN: int = 120     # req/min
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _coerce_debug(cls, value):
+        """Accept common env strings such as release/debug in addition to bools."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "debug", "dev", "development"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+        return value
 
     # ── 计算属性 ──────────────────────────────────────────
     @property

@@ -3,42 +3,360 @@
 }
 
 .chatlist-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  gap: 16px;
+  padding: 18px 28px 10px;
 }
 
-.chatlist-header-left {
+.chatlist-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
-.chatlist-logo {
+.chatlist-brand-mark {
+  display: grid;
+  height: 48px;
+  width: 48px;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(40, 93, 76, 0.18), rgba(198, 150, 84, 0.18));
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  color: var(--sage-deep);
+  font-family: 'ZCOOL XiaoWei', 'Noto Serif SC', serif;
   font-size: 28px;
+  box-shadow: var(--shadow-sm);
+}
+
+.chatlist-brand-copy {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+}
+
+.chatlist-brand-copy strong {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.chatlist-logout.ant-btn {
+  border: 1px solid rgba(30, 52, 45, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.72);
+  color: var(--sage-deep);
+  box-shadow: var(--shadow-sm);
 }
 
 .chatlist-content {
-  max-width: 800px;
+  width: min(1180px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding: 12px 28px 40px;
+}
+
+.chatlist-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  margin-bottom: 24px;
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at top right, rgba(198, 150, 84, 0.26), transparent 28%),
+    linear-gradient(145deg, rgba(255, 252, 247, 0.82), rgba(248, 243, 233, 0.92));
+  box-shadow: var(--shadow-xl);
+  backdrop-filter: blur(16px);
+}
+
+.chatlist-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto -120px -120px auto;
+  height: 280px;
+  width: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(40, 93, 76, 0.12), transparent 70%);
+}
+
+.chatlist-hero-copy,
+.chatlist-hero-panel {
+  position: relative;
+  z-index: 1;
+}
+
+.chatlist-hero-copy h1 {
+  max-width: 620px;
+  margin: 16px 0 12px;
+  font-size: 31px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.chatlist-hero-copy p {
+  max-width: 620px;
+  color: var(--ink-soft);
+  line-height: 1.9;
+}
+
+.chatlist-hero-stats {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.chatlist-profile-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-sm);
+}
+
+.chatlist-profile-summary span {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.chatlist-profile-summary strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.chatlist-stat {
+  min-width: 150px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  box-shadow: var(--shadow-sm);
+}
+
+.chatlist-stat span {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.chatlist-stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 24px;
+}
+
+.chatlist-hero-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.chatlist-cta-card {
+  padding: 22px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(23, 57, 47, 0.96), rgba(40, 93, 76, 0.9));
+  color: #f5f3ed;
+  box-shadow: var(--shadow-lg);
+}
+
+.chatlist-cta-card h2 {
+  margin-bottom: 8px;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 24px;
+}
+
+.chatlist-cta-card p {
+  color: rgba(245, 243, 237, 0.72);
+  line-height: 1.8;
+}
+
+.chatlist-cta-card .ant-btn {
+  margin-top: 18px;
   width: 100%;
 }
 
-.chatlist-actions {
-  margin-bottom: 24px;
-  text-align: center;
+.chatlist-note-list {
+  display: grid;
+  gap: 12px;
 }
 
-.chatlist-item {
+.chatlist-note {
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(255, 253, 248, 0.78);
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  box-shadow: var(--shadow-sm);
+}
+
+.chatlist-note strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+
+.chatlist-note span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.chatlist-section {
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 30px;
+  background: rgba(255, 252, 247, 0.76);
+  box-shadow: var(--shadow-lg);
+}
+
+.chatlist-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.chatlist-section-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chatlist-section-header h2 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.chatlist-section-title p {
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chatlist-section-header span {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.chatlist-session-list .ant-list-items {
+  display: grid;
+  gap: 12px;
+}
+
+.chatlist-item.ant-list-item {
+  padding: 0;
+  border: none;
+}
+
+.chatlist-item-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.74);
   cursor: pointer;
-  padding: 16px;
-  border-radius: 8px;
-  transition: background 0.2s;
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
 }
 
-.chatlist-item:hover {
-  background: #f5f5f5;
+.chatlist-item-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(40, 93, 76, 0.18);
+  box-shadow: var(--shadow-sm);
+}
+
+.chatlist-item-icon {
+  display: grid;
+  height: 48px;
+  width: 48px;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(40, 93, 76, 0.12), rgba(198, 150, 84, 0.14));
+  color: var(--sage);
+  font-family: 'Noto Serif SC', serif;
+  font-size: 20px;
+}
+
+.chatlist-item-main strong {
+  display: block;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.chatlist-item-main p {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.8;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.chatlist-item-meta {
+  text-align: right;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.chatlist-empty {
+  padding: 60px 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+@media (max-width: 1024px) {
+  .chatlist-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .chatlist-header,
+  .chatlist-content {
+    padding-inline: 16px;
+  }
+
+  .chatlist-profile-summary {
+    flex-direction: column;
+  }
+
+  .chatlist-item-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .chatlist-item-meta {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .chatlist-hero-copy h1 {
+    font-size: 26px;
+    white-space: normal;
+  }
 }

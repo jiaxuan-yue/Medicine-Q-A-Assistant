@@ -66,24 +66,46 @@ export default function Dashboard() {
   ];
 
   return (
-    <div>
-      <h2 style={{ marginBottom: 24 }}>运营概览</h2>
+    <div className="admin-page">
+      <section className="admin-hero-card">
+        <div className="admin-hero-content">
+          <div className="admin-hero-copy">
+            <div className="section-badge">Overview</div>
+            <h2>用一眼可读的方式判断平台规模、健康度和待处理压力。</h2>
+            <p>
+              这个仪表盘的目标不是堆指标，而是让你快速知道今天该优先补知识资产、处理审核积压，还是回头优化用户问答体验。
+            </p>
+          </div>
+          <div className="admin-hero-metrics">
+            <div className="admin-mini-stat">
+              <span>用户规模</span>
+              <strong>{dashboardStats.total_users}</strong>
+            </div>
+            <div className="admin-mini-stat">
+              <span>文档资产</span>
+              <strong>{dashboardStats.total_documents}</strong>
+            </div>
+            <div className="admin-mini-stat">
+              <span>好评率</span>
+              <strong>{(dashboardStats.feedback_positive_rate * 100).toFixed(1)}%</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="admin-page-header">
+        <div>
+          <h1>运营概览</h1>
+          <p>从核心指标看平台规模、内容积压和用户满意度，为下一步运营动作提供方向。</p>
+        </div>
+      </div>
+
       <Row gutter={[16, 16]}>
         {stats.map((item) => (
           <Col xs={24} sm={12} lg={8} key={item.title}>
-            <Card hoverable>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <div
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 12,
-                    background: item.color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
+            <Card hoverable className="admin-stat-card">
+              <div className="admin-stat-shell">
+                <div className="admin-stat-icon" style={{ background: item.color }}>
                   {item.icon}
                 </div>
                 <Statistic

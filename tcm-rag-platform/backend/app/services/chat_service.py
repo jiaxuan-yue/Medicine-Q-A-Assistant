@@ -6,6 +6,7 @@ import json
 
 from app.core.exceptions import AppException
 from app.core.logger import get_logger
+from app.db.repositories.case_profile_repo import case_profile_repo
 from app.schemas.chat import ChatSessionOut, MessageOut
 from app.schemas.common import PaginatedResponse
 from app.schemas.user import UserProfile
@@ -21,6 +22,11 @@ from app.services.rag_service import generate_answer_package
 from app.services.rerank_service import rerank_service
 from app.services.retrieval_service import retrieve_documents
 from app.services.store import MessageRecord, SessionRecord, store
+from app.services.case_profile_service import (
+    build_case_profile_summary,
+    case_profile_service,
+    is_case_profile_complete,
+)
 
 logger = get_logger(__name__)
 
@@ -30,6 +36,9 @@ def _serialize_session(session: SessionRecord) -> ChatSessionOut:
         session_id=session.session_id,
         title=session.title,
         summary=session.summary,
+        case_profile_id=session.case_profile_id,
+        case_profile_name=session.case_profile_name,
+        case_profile_summary=session.case_profile_summary,
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
@@ -92,7 +101,12 @@ def _build_conversation_history(session_id: str, limit: int = 6) -> list[dict]:
     return history
 
 
-async def stream_chat(current_user: UserProfile, session_id: str, query: str):
+async def stream_chat(
+    current_user: UserProfile,
+    session_id: str,
+    query: str,
+    case_profile_summary: str | None = None,
+):
     """Full RAG pipeline with real LLM streaming.
 
     Pipeline:
@@ -147,6 +161,7 @@ async def stream_chat(current_user: UserProfile, session_id: str, query: str):
             user_query=query,
             context_chunks=reranked,
             conversation_history=conversation_history,
+            case_profile_summary=case_profile_summary,
         )
 
         # ── Save user message ─────────────────────────────
@@ -214,8 +229,25 @@ async def stream_chat(current_user: UserProfile, session_id: str, query: str):
 class ChatService:
     """Async chat service wrapping in-memory store for API layer."""
 
-    async def create_session(self, db, *, user_id: int, title: str | None = None) -> dict:
-        session = store.create_session(user_id, title=title or "新对话")
+    async def create_session(
+        self,
+        db,
+        *,
+        user_id: int,
+        title: str | None = None,
+        case_profile_id: int,
+    ) -> dict:
+        profile = await case_profile_service.get_profile_or_raise(db, case_profile_repo, user_id, case_profile_id)
+        if not is_case_profile_complete(profile):
+            raise AppException(code=20006, message="所选角色档案未完善，无法开始问答", http_status=400)
+
+        session = store.create_session(
+            user_id,
+            title=title or "新对话",
+            case_profile_id=profile.id,
+            case_profile_name=profile.profile_name,
+            case_profile_summary=build_case_profile_summary(profile),
+        )
         return _serialize_session(session).model_dump()
 
     async def list_sessions(self, db, *, user_id: int, page: int = 1, size: int = 50) -> tuple[list[dict], int]:
@@ -238,10 +270,23 @@ class ChatService:
         session = store.sessions.get(session_id)
         if session is None or session.user_id != user_id:
             raise AppException(code=30004, message="会话不存在", http_status=404)
+        if not session.case_profile_id:
+            raise AppException(code=20006, message="当前会话未绑定角色档案，请重新创建对话", http_status=400)
+
+        case_profile = await case_profile_service.get_profile_or_raise(
+            db,
+            case_profile_repo,
+            user_id,
+            session.case_profile_id,
+        )
+        if not is_case_profile_complete(case_profile):
+            raise AppException(code=20006, message="当前角色档案未完善，请补充后再开始问答", http_status=400)
+
         return {
             "user_id": user_id,
             "session_id": session_id,
             "query": query,
+            "case_profile_summary": build_case_profile_summary(case_profile),
         }
 
     async def stream_answer_events(self, answer_payload: dict):
@@ -250,11 +295,12 @@ class ChatService:
         user_id = answer_payload["user_id"]
         session_id = answer_payload["session_id"]
         query = answer_payload["query"]
+        case_profile_summary = answer_payload.get("case_profile_summary")
         # Build a minimal UserProfile for the legacy stream_chat function
         dummy_user = UserProfile(
             id=user_id, username="", email="", role="user", status="active", created_at=""
         )
-        async for chunk in stream_chat(dummy_user, session_id, query):
+        async for chunk in stream_chat(dummy_user, session_id, query, case_profile_summary=case_profile_summary):
             yield chunk
 
 

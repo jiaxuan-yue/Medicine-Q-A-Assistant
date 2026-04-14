@@ -5,6 +5,48 @@ export interface User {
   role: string;
 }
 
+export interface UserCaseProfile {
+  id: number | null;
+  user_id: number | null;
+  gender: string | null;
+  age: number | null;
+  chief_complaint: string | null;
+  symptom_duration: string | null;
+  primary_symptoms: string[];
+  has_visited_doctor: boolean;
+  currently_taking_medicine: boolean;
+  medication_details: string | null;
+  sleep_status: string | null;
+  appetite_status: string | null;
+  bowel_status: string | null;
+  tongue_description: string | null;
+  medical_history: string | null;
+  allergy_history: string | null;
+  menstrual_history: string | null;
+  profile_completed: boolean;
+  summary: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface UserCaseProfilePayload {
+  gender: string;
+  age: number;
+  chief_complaint: string;
+  symptom_duration: string;
+  primary_symptoms: string[];
+  has_visited_doctor: boolean;
+  currently_taking_medicine: boolean;
+  medication_details?: string | null;
+  sleep_status?: string | null;
+  appetite_status?: string | null;
+  bowel_status?: string | null;
+  tongue_description?: string | null;
+  medical_history?: string | null;
+  allergy_history?: string | null;
+  menstrual_history?: string | null;
+}
+
 export interface LoginRequest {
   username: string;
   password: string;
@@ -26,8 +68,45 @@ export interface ChatSession {
   session_id: string;
   title: string;
   summary: string | null;
+  case_profile_id?: number | null;
+  case_profile_name?: string | null;
+  case_profile_summary?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CaseProfile {
+  id: number;
+  user_id: number;
+  profile_name: string;
+  gender: string | null;
+  age: number | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  medical_history: string | null;
+  allergy_history: string | null;
+  current_medications: string | null;
+  menstrual_history: string | null;
+  notes: string | null;
+  tags: string[];
+  profile_completed: boolean;
+  summary: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CaseProfilePayload {
+  profile_name: string;
+  gender?: string | null;
+  age?: number | null;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  medical_history?: string | null;
+  allergy_history?: string | null;
+  current_medications?: string | null;
+  menstrual_history?: string | null;
+  notes?: string | null;
+  tags?: string[];
 }
 
 export interface Message {

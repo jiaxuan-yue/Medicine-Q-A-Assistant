@@ -25,7 +25,66 @@ function AuthGuard({ children }: { children: ReactNode }) {
 
 function App() {
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        token: {
+          colorPrimary: '#0f5f55',
+          colorInfo: '#0f5f55',
+          colorSuccess: '#0f5f55',
+          colorWarning: '#c48c4b',
+          colorError: '#b15746',
+          colorTextBase: '#102b27',
+          colorBgLayout: 'transparent',
+          colorBgContainer: '#f8fbf9',
+          colorBorder: 'rgba(16, 43, 39, 0.12)',
+          fontFamily: "'Noto Sans SC', sans-serif",
+          borderRadius: 18,
+          borderRadiusLG: 24,
+          boxShadowSecondary: '0 18px 48px rgba(12, 41, 36, 0.1)',
+        },
+        components: {
+          Layout: {
+            headerBg: 'transparent',
+            bodyBg: 'transparent',
+            siderBg: 'transparent',
+          },
+          Menu: {
+            darkItemBg: 'transparent',
+            darkItemSelectedBg: 'rgba(255, 255, 255, 0.12)',
+            darkItemHoverBg: 'rgba(255, 255, 255, 0.08)',
+            darkSubMenuItemBg: 'transparent',
+            itemBorderRadius: 14,
+          },
+          Button: {
+            colorPrimary: '#0f5f55',
+            colorPrimaryHover: '#0a4e46',
+            colorPrimaryActive: '#083f39',
+            primaryShadow: 'none',
+            controlHeight: 42,
+            fontWeight: 600,
+          },
+          Card: {
+            borderRadiusLG: 24,
+          },
+          Table: {
+            headerBg: 'rgba(15, 95, 85, 0.04)',
+            headerSplitColor: 'rgba(16, 43, 39, 0.08)',
+            rowHoverBg: 'rgba(15, 95, 85, 0.04)',
+          },
+          Tabs: {
+            inkBarColor: '#c48c4b',
+            itemColor: '#5f7772',
+            itemSelectedColor: '#102b27',
+            itemHoverColor: '#0f5f55',
+          },
+          Input: {
+            activeBorderColor: '#0f5f55',
+            hoverBorderColor: '#0f5f55',
+          },
+        },
+      }}
+    >
       <AntApp>
         <BrowserRouter>
           <Routes>

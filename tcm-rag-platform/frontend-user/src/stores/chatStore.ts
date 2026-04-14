@@ -12,7 +12,7 @@ interface ChatState {
   loading: boolean;
 
   loadSessions: (page?: number, size?: number) => Promise<void>;
-  createSession: () => Promise<ChatSession>;
+  createSession: (caseProfileId: number, title?: string) => Promise<ChatSession>;
   selectSession: (session: ChatSession) => void;
   loadMessages: (sessionId: string) => Promise<void>;
   appendStreamChunk: (content: string) => void;
@@ -41,8 +41,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  createSession: async () => {
-    const res = await chatApi.createSession();
+  createSession: async (caseProfileId, title) => {
+    const res = await chatApi.createSession({ case_profile_id: caseProfileId, title });
     const session = res.data.data;
     set((state) => ({
       sessions: [session, ...state.sessions],
@@ -61,8 +61,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const res = await chatApi.getMessages(sessionId);
       set({ messages: res.data.data, loading: false });
-    } catch {
+    } catch (error) {
       set({ loading: false });
+      throw error;
     }
   },
 

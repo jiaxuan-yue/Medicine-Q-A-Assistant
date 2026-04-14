@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.role import Role, RoleName
 from app.models.user import User
+from app.models.user_case_profile import UserCaseProfile
 
 
 class UserRepository:
@@ -15,15 +16,27 @@ class UserRepository:
         return int(await db.scalar(select(func.count(User.id))) or 0)
 
     async def get_by_id(self, db: AsyncSession, user_id: int) -> User | None:
-        stmt = select(User).options(selectinload(User.roles)).where(User.id == user_id)
+        stmt = (
+            select(User)
+            .options(selectinload(User.roles), selectinload(User.case_profile))
+            .where(User.id == user_id)
+        )
         return await db.scalar(stmt)
 
     async def get_by_username(self, db: AsyncSession, username: str) -> User | None:
-        stmt = select(User).options(selectinload(User.roles)).where(User.username == username)
+        stmt = (
+            select(User)
+            .options(selectinload(User.roles), selectinload(User.case_profile))
+            .where(User.username == username)
+        )
         return await db.scalar(stmt)
 
     async def get_by_email(self, db: AsyncSession, email: str) -> User | None:
-        stmt = select(User).options(selectinload(User.roles)).where(User.email == email)
+        stmt = (
+            select(User)
+            .options(selectinload(User.roles), selectinload(User.case_profile))
+            .where(User.email == email)
+        )
         return await db.scalar(stmt)
 
     async def ensure_role(self, db: AsyncSession, role_name: RoleName) -> Role:
@@ -79,6 +92,33 @@ class UserRepository:
         await db.flush()
         await db.refresh(user, attribute_names=["roles"])
         return user
+
+    async def get_case_profile_by_user_id(
+        self,
+        db: AsyncSession,
+        user_id: int,
+    ) -> UserCaseProfile | None:
+        stmt = select(UserCaseProfile).where(UserCaseProfile.user_id == user_id)
+        return await db.scalar(stmt)
+
+    async def upsert_case_profile(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        profile_data: dict,
+    ) -> UserCaseProfile:
+        profile = await self.get_case_profile_by_user_id(db, user_id)
+        if profile is None:
+            profile = UserCaseProfile(user_id=user_id)
+            db.add(profile)
+
+        for key, value in profile_data.items():
+            setattr(profile, key, value)
+
+        await db.flush()
+        await db.refresh(profile)
+        return profile
 
 
 user_repo = UserRepository()

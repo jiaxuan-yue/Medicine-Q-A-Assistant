@@ -1,6 +1,7 @@
 """注册 ORM 模型，供 Base.metadata.create_all 使用。"""
 
 from app.models.answer_log import AnswerLog
+from app.models.case_profile import CaseProfile
 from app.models.chunk import Chunk
 from app.models.document import Document
 from app.models.eval_task import EvalTask
@@ -12,9 +13,11 @@ from app.models.retrieval_log import RetrievalLog
 from app.models.role import Role, UserRole
 from app.models.session import ChatSession
 from app.models.user import User
+from app.models.user_case_profile import UserCaseProfile
 
 __all__ = [
     "AnswerLog",
+    "CaseProfile",
     "ChatSession",
     "Chunk",
     "Document",
@@ -26,5 +29,6 @@ __all__ = [
     "RetrievalLog",
     "Role",
     "User",
+    "UserCaseProfile",
     "UserRole",
 ]
