@@ -224,7 +224,10 @@ def _read_file_with_fallback(fpath: str) -> str:
 
 def chunk_one_book(book: dict) -> list[dict]:
     """Chunk one book, returning list of chunk dicts."""
-    doc_id = str(uuid.uuid4())
+    # Keep document/chunk ids stable across retries so ES upserts overwrite
+    # previous partial attempts instead of creating duplicate documents.
+    stable_source = book.get("filename") or book.get("path") or book["title"]
+    doc_id = str(uuid.uuid5(uuid.NAMESPACE_URL, stable_source))
     raw_chunks = chunking_service.chunk_text(book["text"], chunk_size=512, overlap=50)
     chunks: list[dict] = []
     for ch in raw_chunks:
@@ -333,6 +336,9 @@ async def embed_batches_concurrent(
     texts: list[str],
     workers: int,
     book_label: str = "",
+    *,
+    batch_retries: int = 3,
+    zero_pad_on_failure: bool = False,
 ) -> list[list[float]]:
     """Embed texts in concurrent batches using a thread pool.
 
@@ -361,24 +367,45 @@ async def embed_batches_concurrent(
     async def embed_one(batch_idx: int, batch: list[str]) -> None:
         nonlocal completed
         async with semaphore:
-            try:
-                vectors = await loop.run_in_executor(
-                    executor, _embed_single_batch_sync, batch
-                )
-                results[batch_idx] = vectors
-            except Exception as e:
-                logger.warning(f"Batch {batch_idx + 1} failed: {e}, retrying...")
-                await asyncio.sleep(1)
+            last_error: Exception | None = None
+            for attempt in range(1, batch_retries + 1):
                 try:
                     vectors = await loop.run_in_executor(
                         executor, _embed_single_batch_sync, batch
                     )
                     results[batch_idx] = vectors
-                except Exception as e2:
-                    logger.warning(f"Batch {batch_idx + 1} retry failed: {e2}, zero-padding")
-                    results[batch_idx] = [
-                        [0.0] * settings.EMBEDDING_DIM
-                    ] * len(batch)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < batch_retries:
+                        backoff = min(2 * attempt, 10)
+                        logger.warning(
+                            "Batch %d failed (attempt %d/%d): %s, retrying in %ss...",
+                            batch_idx + 1,
+                            attempt,
+                            batch_retries,
+                            exc,
+                            backoff,
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+
+                    if zero_pad_on_failure:
+                        logger.warning(
+                            "Batch %d failed after %d attempts: %s, zero-padding",
+                            batch_idx + 1,
+                            batch_retries,
+                            exc,
+                        )
+                        results[batch_idx] = [
+                            [0.0] * settings.EMBEDDING_DIM
+                        ] * len(batch)
+                        break
+
+                    raise RuntimeError(
+                        f"Batch {batch_idx + 1} failed after "
+                        f"{batch_retries} attempts: {last_error}"
+                    ) from last_error
 
             async with lock:
                 completed += 1
@@ -407,10 +434,22 @@ async def embed_batches_concurrent(
     return all_embeddings
 
 
-async def embed_and_store_chunks(chunks: list[dict], workers: int, book_title: str) -> int:
+async def embed_and_store_chunks(
+    chunks: list[dict],
+    workers: int,
+    book_title: str,
+    *,
+    batch_retries: int = 3,
+) -> int:
     """Embed chunks for one book and add to FAISS index."""
     texts = [ch["chunk_text"] for ch in chunks]
-    embeddings = await embed_batches_concurrent(texts, workers, book_title)
+    embeddings = await embed_batches_concurrent(
+        texts,
+        workers,
+        book_title,
+        batch_retries=batch_retries,
+        zero_pad_on_failure=False,
+    )
 
     metadata = [
         {
@@ -594,14 +633,18 @@ async def main(args: argparse.Namespace) -> None:
 
     max_books = None if args.all else args.max_books
     workers = min(args.workers, 8)
+    save_every = max(1, args.save_every)
+    book_retries = max(1, args.book_retries)
 
     print("=" * 60)
     print("TCM-RAG Bootstrap Index Builder")
     print(f"  Books dir:       {TCM_BOOKS_DIR}")
     print(f"  Max books:       {'ALL' if max_books is None else max_books}")
     print(f"  Workers:         {workers}")
+    print(f"  Book retries:    {book_retries}")
     print(f"  Skip embedding:  {args.skip_embedding}")
     print(f"  Skip graph:      {args.skip_graph}")
+    print(f"  Save every:      {save_every} book(s)")
     print(f"  Checkpoint:      {CHECKPOINT_PATH}")
     print("=" * 60)
 
@@ -612,6 +655,7 @@ async def main(args: argparse.Namespace) -> None:
         print(
             f"\n📌 Resuming from checkpoint: {len(completed_set)} books already processed"
         )
+    initial_completed_count = len(completed_set)
 
     # ── Step 1: Load books ────────────────────────────────────
     print("\nStep 1: Loading TCM book files...")
@@ -654,12 +698,13 @@ async def main(args: argparse.Namespace) -> None:
 
     # ── Process books one by one ──────────────────────────────
     global_start = time.monotonic()
+    fatal_exc: Exception | None = None
 
     for book_idx, book in enumerate(pending_books):
         book_start = time.monotonic()
         elapsed_total = book_start - global_start
         books_done_so_far = book_idx  # within this run
-        overall_done = len(completed_set) + book_idx
+        overall_done = initial_completed_count + book_idx
 
         # ETA calculation
         if books_done_so_far > 0:
@@ -671,52 +716,123 @@ async def main(args: argparse.Namespace) -> None:
 
         pct = (overall_done + 1) / total_books * 100
 
-        # ── 2. Chunk ──────────────────────────────────────────
-        chunks = chunk_one_book(book)
-        print(
-            f"\nBook {overall_done + 1}/{total_books} ({pct:.1f}%) — "
-            f"{book['title']} — {len(chunks)} chunks"
-            f"  [Elapsed: {_fmt_duration(elapsed_total)}{eta_str}]"
-        )
+        book_succeeded = False
 
-        if not chunks:
-            print("  ⚠ No chunks, skipping")
-            ckpt["completed_books"].append(book["filename"])
-            completed_set.add(book["filename"])
-            save_checkpoint(ckpt)
-            continue
+        for attempt in range(1, book_retries + 1):
+            faiss_appended = False
+            chunks: list[dict] = []
+            es_count = 0
+            vec_count = 0
+            ent_count = 0
+            rel_count = 0
 
-        # ── 3. Elasticsearch ──────────────────────────────────
-        es_count = await index_es_chunks(chunks)
-        if es_count:
-            print(f"    ES: indexed {es_count} chunks")
+            try:
+                # ── 2. Chunk ──────────────────────────────────
+                chunks = chunk_one_book(book)
+                attempt_suffix = f" [attempt {attempt}/{book_retries}]" if book_retries > 1 else ""
+                print(
+                    f"\nBook {overall_done + 1}/{total_books} ({pct:.1f}%) — "
+                    f"{book['title']} — {len(chunks)} chunks{attempt_suffix}"
+                    f"  [Elapsed: {_fmt_duration(elapsed_total)}{eta_str}]"
+                )
 
-        # ── 4. Embeddings + FAISS ─────────────────────────────
-        vec_count = 0
-        if not args.skip_embedding:
-            vec_count = await embed_and_store_chunks(chunks, workers, book["title"])
-            print(f"    FAISS: +{vec_count} vectors (total: {vector_store.size})")
-        else:
-            print("    Embedding: skipped (--skip-embedding)")
+                if not chunks:
+                    print("  ⚠ No chunks, skipping")
+                    ckpt["completed_books"].append(book["filename"])
+                    completed_set.add(book["filename"])
+                    save_checkpoint(ckpt)
+                    book_succeeded = True
+                    break
 
-        # ── 5. Knowledge graph ────────────────────────────────
-        ent_count, rel_count = 0, 0
-        if not args.skip_graph:
-            ent_count, rel_count = await build_graph_for_book(chunks)
-            if ent_count or rel_count:
-                print(f"    Graph: +{ent_count} entities, +{rel_count} relations")
-        else:
-            print("    Graph: skipped (--skip-graph)")
+                # ── 3. Elasticsearch ──────────────────────────
+                es_count = await index_es_chunks(chunks)
+                if es_count:
+                    print(f"    ES: indexed {es_count} chunks")
 
-        # ── Save checkpoint ───────────────────────────────────
-        ckpt["completed_books"].append(book["filename"])
-        completed_set.add(book["filename"])
-        ckpt["stats"]["total_chunks"] += len(chunks)
-        ckpt["stats"]["total_vectors"] += vec_count
-        ckpt["stats"]["total_es_docs"] += es_count
-        ckpt["stats"]["total_entities"] += ent_count
-        ckpt["stats"]["total_relations"] += rel_count
-        save_checkpoint(ckpt)
+                # ── 4. Embeddings + FAISS ─────────────────────
+                if not args.skip_embedding:
+                    vec_count = await embed_and_store_chunks(
+                        chunks,
+                        workers,
+                        book["title"],
+                        batch_retries=args.batch_retries,
+                    )
+                    faiss_appended = vec_count > 0
+                    print(f"    FAISS: +{vec_count} vectors (total: {vector_store.size})")
+                else:
+                    print("    Embedding: skipped (--skip-embedding)")
+
+                # ── 5. Knowledge graph ────────────────────────
+                if not args.skip_graph:
+                    ent_count, rel_count = await build_graph_for_book(chunks)
+                    if ent_count or rel_count:
+                        print(f"    Graph: +{ent_count} entities, +{rel_count} relations")
+                else:
+                    print("    Graph: skipped (--skip-graph)")
+
+                # ── Save checkpoint ───────────────────────────
+                ckpt["completed_books"].append(book["filename"])
+                completed_set.add(book["filename"])
+                ckpt["stats"]["total_chunks"] += len(chunks)
+                ckpt["stats"]["total_vectors"] += vec_count
+                ckpt["stats"]["total_es_docs"] += es_count
+                ckpt["stats"]["total_entities"] += ent_count
+                ckpt["stats"]["total_relations"] += rel_count
+                save_checkpoint(ckpt)
+
+                if (
+                    not args.skip_embedding
+                    and vector_store.available
+                    and ((book_idx + 1) % save_every == 0 or (book_idx + 1) == len(pending_books))
+                ):
+                    faiss_dir = os.path.join(settings.PROCESSED_DOCUMENTS_DIR, "faiss_index")
+                    os.makedirs(faiss_dir, exist_ok=True)
+                    vector_store.save(faiss_dir)
+                    print(f"    FAISS checkpoint saved: {vector_store.size} vectors")
+
+                book_succeeded = True
+                break
+
+            except Exception as exc:
+                logger.exception("Book '%s' attempt %d failed", book["title"], attempt)
+
+                if faiss_appended:
+                    if not args.skip_embedding and vector_store.available:
+                        faiss_dir = os.path.join(settings.PROCESSED_DOCUMENTS_DIR, "faiss_index")
+                        os.makedirs(faiss_dir, exist_ok=True)
+                        vector_store.save(faiss_dir)
+                    fatal_exc = RuntimeError(
+                        f"Book '{book['title']}' failed after FAISS append; "
+                        "stopped to avoid duplicate vectors. Rerun will resume from this book."
+                    )
+                    print(f"  ✗ {fatal_exc}")
+                    break
+
+                if attempt < book_retries:
+                    backoff = min(5 * attempt, 30)
+                    print(
+                        f"  ⚠ Book failed: {exc}\n"
+                        f"    retrying in {backoff}s "
+                        f"({attempt}/{book_retries})..."
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+
+                if not args.skip_embedding and vector_store.available:
+                    faiss_dir = os.path.join(settings.PROCESSED_DOCUMENTS_DIR, "faiss_index")
+                    os.makedirs(faiss_dir, exist_ok=True)
+                    vector_store.save(faiss_dir)
+                fatal_exc = RuntimeError(
+                    f"Book '{book['title']}' failed after {book_retries} attempts. "
+                    "Progress before this book has been saved; rerun will resume here."
+                )
+                print(f"  ✗ {fatal_exc}")
+                break
+
+        if fatal_exc is not None:
+            break
+        if not book_succeeded:
+            break
 
     # ── Save FAISS to disk ────────────────────────────────────
     if not args.skip_embedding and vector_store.available:
@@ -735,6 +851,8 @@ async def main(args: argparse.Namespace) -> None:
     total_time = time.monotonic() - global_start
     print(f"\n✅ Bootstrap complete! Processed {len(pending_books)} books in {_fmt_duration(total_time)}")
     print(f"   Total books in checkpoint: {len(ckpt['completed_books'])}/{total_books}")
+    if fatal_exc is not None:
+        raise fatal_exc
 
 
 def cli() -> argparse.Namespace:
@@ -758,6 +876,18 @@ def cli() -> argparse.Namespace:
     parser.add_argument(
         "--workers", type=int, default=3,
         help="Number of concurrent embedding workers (default: 3, max: 8)",
+    )
+    parser.add_argument(
+        "--save-every", type=int, default=1,
+        help="Persist FAISS to disk every N processed books (default: 1)",
+    )
+    parser.add_argument(
+        "--book-retries", type=int, default=3,
+        help="Retry each failed book up to N times before stopping (default: 3)",
+    )
+    parser.add_argument(
+        "--batch-retries", type=int, default=4,
+        help="Retry each failed embedding batch up to N times before failing the book (default: 4)",
     )
     parser.add_argument(
         "--reset", action="store_true",

@@ -69,7 +69,7 @@ class Settings(BaseSettings):
 
     # ── 特性开关 ──────────────────────────────────────────
     QUERY_REWRITE_ENABLED: bool = True
-    GRAPH_RECALL_ENABLED: bool = True
+    GRAPH_RECALL_ENABLED: bool = False
     RERANKER_ENABLED: bool = True
 
     # ── JWT 安全 ──────────────────────────────────────────

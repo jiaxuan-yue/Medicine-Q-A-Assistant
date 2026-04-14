@@ -82,10 +82,13 @@ async def lifespan(app: FastAPI):
         logger.warning("FAISS 初始化失败，继续以降级模式运行: %s", exc)
 
     # Neo4j
-    try:
-        await neo4j_client.init()
-    except Exception as exc:
-        logger.warning("Neo4j 初始化失败，继续以降级模式运行: %s", exc)
+    if settings.GRAPH_RECALL_ENABLED:
+        try:
+            await neo4j_client.init()
+        except Exception as exc:
+            logger.warning("Neo4j 初始化失败，继续以降级模式运行: %s", exc)
+    else:
+        logger.info("知识图谱召回已关闭，跳过 Neo4j 初始化")
 
     # Store references on app.state for access in request handlers
     app.state.es_client = es_client
@@ -98,7 +101,8 @@ async def lifespan(app: FastAPI):
 
     # ── 关闭 ──────────────────────────────────────────────
     await es_client.close()
-    await neo4j_client.close()
+    if settings.GRAPH_RECALL_ENABLED:
+        await neo4j_client.close()
     if redis_client:
         await redis_client.aclose()
         logger.info("Redis 连接已关闭")

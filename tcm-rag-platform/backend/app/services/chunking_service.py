@@ -90,18 +90,36 @@ class ChunkingService:
                     chunk_index += 1
                     # Overlap: carry tail of buffer into next
                     tail = buffer[-overlap:] if overlap < len(buffer) else buffer
-                    buffer = f"{tail}{paragraph}"
-                else:
-                    # Paragraph itself exceeds chunk_size → character-level split
-                    for start in range(0, len(paragraph), chunk_size - overlap):
-                        piece = paragraph[start: start + chunk_size]
-                        if piece:
+                    carry_text = f"{tail}{paragraph}".strip()
+                    split_pieces = self._split_oversized_text(
+                        carry_text,
+                        chunk_size=chunk_size,
+                        overlap=overlap,
+                    )
+                    if len(split_pieces) == 1:
+                        buffer = split_pieces[0]
+                    else:
+                        for piece in split_pieces:
                             chunks.append(self._build_chunk(
                                 chunk_index, piece,
                                 section=section_title,
                                 position=chunk_index,
                             ))
                             chunk_index += 1
+                        buffer = ""
+                else:
+                    # Paragraph itself exceeds chunk_size → character-level split
+                    for piece in self._split_oversized_text(
+                        paragraph,
+                        chunk_size=chunk_size,
+                        overlap=overlap,
+                    ):
+                        chunks.append(self._build_chunk(
+                            chunk_index, piece,
+                            section=section_title,
+                            position=chunk_index,
+                        ))
+                        chunk_index += 1
                     buffer = ""
 
             # Flush remaining buffer for this section
@@ -144,6 +162,27 @@ class ChunkingService:
                 sections.append((title, body))
 
         return sections if sections else [("", text)]
+
+    @staticmethod
+    def _split_oversized_text(
+        text: str,
+        *,
+        chunk_size: int,
+        overlap: int,
+    ) -> list[str]:
+        cleaned = text.strip()
+        if not cleaned:
+            return []
+        if len(cleaned) <= chunk_size:
+            return [cleaned]
+
+        step = max(1, chunk_size - overlap)
+        pieces: list[str] = []
+        for start in range(0, len(cleaned), step):
+            piece = cleaned[start: start + chunk_size].strip()
+            if piece:
+                pieces.append(piece)
+        return pieces
 
     # ── Chunk builder ───────────────────────────────────────
 
