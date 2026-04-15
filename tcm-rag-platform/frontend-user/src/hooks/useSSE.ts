@@ -1,14 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { connectSSE } from '../utils/sse';
 import { useChatStore } from '../stores/chatStore';
-import type { Citation } from '../types';
+import type { Citation, UserLocationPayload } from '../types';
 
 interface UseSSEReturn {
   isStreaming: boolean;
   streamContent: string;
   citations: Citation[];
   error: string | null;
-  sendMessage: (sessionId: string, query: string) => Promise<void>;
+  sendMessage: (sessionId: string, query: string, userLocation?: UserLocationPayload | null) => Promise<void>;
   cancelStream: () => void;
 }
 
@@ -34,7 +34,7 @@ export function useSSE(): UseSSEReturn {
   }, []);
 
   const sendMessage = useCallback(
-    async (sessionId: string, query: string) => {
+    async (sessionId: string, query: string, userLocation: UserLocationPayload | null = null) => {
       if (isStreaming) return;
 
       setError(null);
@@ -50,6 +50,7 @@ export function useSSE(): UseSSEReturn {
         await connectSSE(
           sessionId,
           query,
+          userLocation,
           {
             onStart: (data) => {
               messageIdRef.current = data.message_id;
@@ -60,9 +61,12 @@ export function useSSE(): UseSSEReturn {
             onCitation: (data) => {
               setStreamingCitations(data.citations);
             },
-            onDone: () => {
+            onDone: (data) => {
               receivedDone = true;
-              finishStream(messageIdRef.current || `msg-${Date.now()}`);
+              finishStream(
+                data.message_id || messageIdRef.current || `msg-${Date.now()}`,
+                data.message_kind || 'answer',
+              );
             },
             onError: (data) => {
               receivedDone = true;
@@ -75,7 +79,7 @@ export function useSSE(): UseSSEReturn {
 
         // Safety: if stream ended without a done/error event, finalize anyway
         if (!receivedDone) {
-          finishStream(messageIdRef.current || `msg-${Date.now()}`);
+          finishStream(messageIdRef.current || `msg-${Date.now()}`, 'answer');
         }
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {

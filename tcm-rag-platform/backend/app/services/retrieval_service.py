@@ -17,6 +17,7 @@ from app.integrations.vector_store import VectorStore, vector_store
 from app.schemas.chat import Citation
 from app.schemas.rag import QueryRewriteResult, RetrievalHit
 from app.services.store import store
+from app.services.text_normalization_service import expand_script_variants
 
 logger = get_logger(__name__)
 
@@ -76,6 +77,14 @@ class RetrievalService:
             logger.info("所有检索通道为空，降级到内存关键词检索")
             fused_docs = _fallback_keyword_search(rewrite_result, fusion_k)
 
+        logger.info(
+            "retrieval: sparse=%d, dense=%d, graph=%d, fused=%d",
+            len(sparse_docs),
+            len(dense_docs),
+            len(graph_docs),
+            len(fused_docs),
+        )
+
         return {
             "sparse_docs": sparse_docs,
             "dense_docs": dense_docs,
@@ -92,10 +101,11 @@ class RetrievalService:
         try:
             all_hits: list[dict] = []
             for q in queries:
-                hits = await self._es.search_bm25(TCM_CHUNKS_INDEX, q, top_k=top_k)
-                for h in hits:
-                    h["source_type"] = "sparse"
-                all_hits.extend(hits)
+                for variant in expand_script_variants(q):
+                    hits = await self._es.search_bm25(TCM_CHUNKS_INDEX, variant, top_k=top_k)
+                    for h in hits:
+                        h["source_type"] = "sparse"
+                    all_hits.extend(hits)
             # deduplicate by chunk_id, keep highest score
             return _deduplicate(all_hits, top_k)
         except Exception as exc:
@@ -109,11 +119,14 @@ class RetrievalService:
         if not self._vs.available:
             return []
         try:
-            query_embedding = await embedding_client.embed_query(query)
-            hits = await self._vs.search(query_embedding, top_k=top_k)
-            for h in hits:
-                h["source_type"] = "dense"
-            return hits
+            all_hits: list[dict] = []
+            for variant in expand_script_variants(query):
+                query_embedding = await embedding_client.embed_query(variant)
+                hits = await self._vs.search(query_embedding, top_k=top_k)
+                for h in hits:
+                    h["source_type"] = "dense"
+                all_hits.extend(hits)
+            return _deduplicate(all_hits, top_k)
         except Exception as exc:
             logger.warning("稠密检索失败，降级跳过: %s", exc)
             return []

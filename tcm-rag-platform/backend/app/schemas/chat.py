@@ -24,6 +24,7 @@ class MessageOut(BaseModel):
     id: str
     role: str
     content: str
+    kind: str | None = None
     citations: list[Citation] | None = None
     latency_ms: int | None = None
     created_at: str
@@ -33,8 +34,19 @@ class ChatStreamRequest(BaseModel):
     query: str
 
 
+class UserLocationPayload(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_m: float | None = None
+    source: str | None = "browser-geolocation"
+    label: str | None = None
+    city: str | None = None
+    province: str | None = None
+
+
 class ChatQueryRequest(BaseModel):
     query: str
+    user_location: UserLocationPayload | None = None
 
 
 class CreateSessionRequest(BaseModel):

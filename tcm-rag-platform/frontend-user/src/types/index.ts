@@ -113,6 +113,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  kind?: 'user' | 'answer' | 'followup';
   citations?: Citation[];
   latency_ms?: number;
   created_at: string;
@@ -126,6 +127,16 @@ export interface Citation {
   location?: string;
   /** @deprecated use excerpt instead */
   text?: string;
+}
+
+export interface UserLocationPayload {
+  latitude: number;
+  longitude: number;
+  accuracy_m?: number;
+  source?: string;
+  label?: string;
+  city?: string;
+  province?: string;
 }
 
 export interface FeedbackData {
@@ -158,6 +169,8 @@ export interface SSECitationEvent {
 export interface SSEDoneEvent {
   total_tokens: number;
   latency_ms: number;
+  message_id?: string;
+  message_kind?: 'answer' | 'followup';
 }
 
 export interface SSEErrorEvent {

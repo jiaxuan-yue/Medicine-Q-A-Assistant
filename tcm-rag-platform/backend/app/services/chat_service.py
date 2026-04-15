@@ -16,11 +16,15 @@ from app.services.answer_service import (
     split_answer_for_stream,
     stream_answer,
 )
+from app.services.dietary_generation_context_service import dietary_generation_context_service
+from app.services.environment_mcp_client_service import flash_call_environment_mcp
+from app.services.followup_service import followup_service
+from app.services.light_agent_service import light_agent_service
 from app.services.prompt_service import prompt_service
 from app.services.query_rewrite_service import rewrite_query, rewrite_query_async
 from app.services.rag_service import generate_answer_package
 from app.services.rerank_service import rerank_service
-from app.services.retrieval_service import retrieve_documents
+from app.services.retrieval_service import retrieval_service
 from app.services.store import MessageRecord, SessionRecord, store
 from app.services.case_profile_service import (
     build_case_profile_summary,
@@ -49,6 +53,7 @@ def _serialize_message(message: MessageRecord) -> MessageOut:
         id=message.id,
         role=message.role,
         content=message.content,
+        kind=message.kind,
         citations=message.citations,
         latency_ms=message.latency_ms,
         created_at=message.created_at,
@@ -106,6 +111,8 @@ async def stream_chat(
     session_id: str,
     query: str,
     case_profile_summary: str | None = None,
+    weather_mcp_data: dict | None = None,
+    user_location: dict | None = None,
 ):
     """Full RAG pipeline with real LLM streaming.
 
@@ -124,44 +131,169 @@ async def stream_chat(
         return
 
     try:
-        # ── Step 1: Query Rewrite ──────────────────────────
-        query_bundle = await rewrite_query_async(query, history_summary=session.summary)
-        logger.info("query_rewrite: raw=%s, normalized=%s, entities=%s, intent=%s",
-                     query, query_bundle.normalized_query, query_bundle.entities, query_bundle.intent)
+        effective_query = query
+        clarification_context: str | None = None
 
-        # ── Step 2: Retrieval ──────────────────────────────
-        hits = retrieve_documents(query_bundle, top_k=10)
+        # ── Step 0: Follow-up Gate ─────────────────────────
+        preview_plan = light_agent_service.plan(query, history_summary=session.summary)
+        preview_bundle = rewrite_query(query, history_summary=session.summary)
+        followup_decision = followup_service.process_turn(
+            session,
+            query=query,
+            intent=preview_bundle.intent,
+            answer_style=preview_plan.answer_style,
+            case_profile_summary=case_profile_summary,
+        )
+        logger.info(
+            "followup_gate: need_follow_up=%s, preview_style=%s, preview_intent=%s, effective_query=%s, clarification=%s",
+            followup_decision.need_follow_up,
+            preview_plan.answer_style,
+            preview_bundle.intent,
+            followup_decision.effective_query,
+            followup_decision.clarification_context or "-",
+        )
 
-        # Convert hits to dicts for reranker
+        if followup_decision.need_follow_up and followup_decision.follow_up_message:
+            store.add_message(
+                session_id=session_id,
+                role="user",
+                content=query,
+                kind="user",
+                rewritten_query=query,
+            )
+            yield _format_sse("start", {"session_id": session_id, "message_id": ""})
+            full_followup = followup_decision.follow_up_message
+            for piece in split_answer_for_stream(full_followup, chunk_size=32):
+                yield _format_sse("chunk", {"content": piece})
+            assistant_message = store.add_message(
+                session_id=session_id,
+                role="assistant",
+                content=full_followup,
+                kind="followup",
+                citations=[],
+                latency_ms=0,
+            )
+            yield _format_sse("citation", {"citations": []})
+            yield _format_sse(
+                "done",
+                {
+                    "message_id": assistant_message.id,
+                    "message_kind": "followup",
+                    "total_tokens": max(1, len(full_followup)),
+                    "latency_ms": 0,
+                },
+            )
+            return
+
+        effective_query = followup_decision.effective_query or query
+        clarification_context = followup_decision.clarification_context
+
+        # ── Step 1: Light Agent Plan ───────────────────────
+        tool_plan = light_agent_service.plan(effective_query, history_summary=session.summary)
+        logger.info(
+            "tool_plan: strategy=%s, llm_rewrite=%s, rerank=%s, retrieval_top_k=%d, answer_top_k=%d, style=%s, reason=%s",
+            tool_plan.strategy,
+            tool_plan.use_llm_rewrite,
+            tool_plan.use_rerank,
+            tool_plan.retrieval_top_k,
+            tool_plan.answer_top_k,
+            tool_plan.answer_style,
+            tool_plan.reason,
+        )
+
+        # ── Tool 2: Query Rewrite ─────────────────────────
+        query_bundle = await rewrite_query_async(
+            effective_query,
+            history_summary=session.summary,
+            use_llm=tool_plan.use_llm_rewrite,
+        )
+        logger.info(
+            "query_rewrite: raw=%s, normalized=%s, entities=%s, intent=%s",
+            effective_query,
+            query_bundle.normalized_query,
+            query_bundle.entities,
+            query_bundle.intent,
+        )
+
+        # ── Tool 3: Hybrid Retrieval ───────────────────────
+        retrieval_bundle = await retrieval_service.retrieve(
+            query=effective_query,
+            rewrite_result=query_bundle,
+            top_k=tool_plan.retrieval_top_k,
+        )
+        hits = retrieval_bundle["fused_docs"]
+
+        # Convert hits to dicts for the following tools
         hit_dicts = [
             {
-                "chunk_id": h.chunk_id,
-                "doc_id": h.doc_id,
-                "doc_title": h.doc_title,
-                "source": h.source,
-                "retrieval_source": h.retrieval_source,
-                "score": h.score,
-                "reason": h.reason,
-                "text": h.text,
+                "chunk_id": h.get("chunk_id", ""),
+                "doc_id": h.get("doc_id", ""),
+                "doc_title": h.get("doc_title", ""),
+                "source": h.get("source_type", h.get("source", "")),
+                "retrieval_source": h.get("source_type", h.get("source", "")),
+                "score": h.get("score", 0.0),
+                "reason": h.get("source_type", h.get("reason", "")),
+                "text": h.get("chunk_text", h.get("text", "")),
+                "metadata": h.get("metadata", {}),
             }
             for h in hits
         ]
 
-        # ── Step 3: Rerank ─────────────────────────────────
-        reranked = await rerank_service.rerank(
-            query=query_bundle.normalized_query,
-            candidates=hit_dicts,
-            top_k=5,
-        )
-        logger.info("rerank: %d → %d candidates", len(hit_dicts), len(reranked))
+        # ── Tool 4: Rerank (conditional) ───────────────────
+        if light_agent_service.should_rerank(hit_dicts, tool_plan):
+            reranked = await rerank_service.rerank(
+                query=query_bundle.normalized_query,
+                candidates=hit_dicts,
+                top_k=tool_plan.rerank_top_k,
+            )
+            logger.info("rerank: %d → %d candidates", len(hit_dicts), len(reranked))
+        else:
+            reranked = light_agent_service.trim_for_answer(hit_dicts, tool_plan)
+            logger.info("rerank skipped: using top %d fused candidates directly", len(reranked))
 
-        # ── Step 4: Build Prompt ───────────────────────────
+        # ── Tool 5: Flash-call environment MCP ─────────────
+        live_context = await flash_call_environment_mcp(preferred_location=user_location)
+        logger.info(
+            "live_context: %s",
+            live_context.get("environmental_context", "时间：未知 | 位置：未提供 | 天气：未获取"),
+        )
+
+        # ── Tool 6: Aggregate generation context ───────────
+        effective_case_profile_summary = case_profile_summary
+        if clarification_context:
+            effective_case_profile_summary = (
+                f"{case_profile_summary}；本轮补充：{clarification_context}"
+                if case_profile_summary
+                else f"本轮补充：{clarification_context}"
+            )
+        generation_context = dietary_generation_context_service.build_context(
+            user_query=effective_query,
+            case_profile_summary=effective_case_profile_summary,
+            retrieved_chunks=reranked,
+            weather_mcp_data=weather_mcp_data,
+            live_context=live_context,
+        )
+        if clarification_context:
+            generation_context["clarification_context"] = clarification_context
+        logger.info(
+            "generation_context: env=%s, location=%s, solar_term=%s, constitution=%s, ancient_chunks=%d, weather_source=%s",
+            generation_context.get("environmental_context", "时间：未知 | 位置：未提供 | 天气：未获取"),
+            generation_context["weather_mcp_data"].get("location", "未提供"),
+            generation_context.get("current_solar_term", "未提供"),
+            generation_context.get("user_constitution", "未提供"),
+            len(generation_context.get("retrieved_ancient_chunks", [])),
+            generation_context["weather_mcp_data"].get("source", "unknown"),
+        )
+
+        # ── Tool 7: Build Prompt ───────────────────────────
         conversation_history = _build_conversation_history(session_id)
         messages = prompt_service.build_prompt(
-            user_query=query,
+            user_query=effective_query,
             context_chunks=reranked,
             conversation_history=conversation_history,
-            case_profile_summary=case_profile_summary,
+            case_profile_summary=effective_case_profile_summary,
+            answer_style=tool_plan.answer_style,
+            generation_context=generation_context,
         )
 
         # ── Save user message ─────────────────────────────
@@ -169,10 +301,11 @@ async def stream_chat(
             session_id=session_id,
             role="user",
             content=query,
+            kind="user",
             rewritten_query=query_bundle.rewrite_queries[0] if query_bundle.rewrite_queries else query,
         )
 
-        # ── Step 5: Stream LLM Answer ─────────────────────
+        # ── Step 6: Stream LLM Answer ─────────────────────
         # Emit start event
         placeholder_id = None
         yield _format_sse("start", {"session_id": session_id, "message_id": ""})
@@ -182,7 +315,12 @@ async def stream_chat(
         latency_ms = 0
         token_count = 0
 
-        async for event in stream_answer(messages, chunks_used=reranked):
+        async for event in stream_answer(
+            messages,
+            chunks_used=reranked,
+            temperature=0.7,
+            top_p=0.9,
+        ):
             if event["event"] == "chunk":
                 yield _format_sse("chunk", {"content": event["data"]["content"]})
             elif event["event"] == "done":
@@ -201,6 +339,7 @@ async def stream_chat(
             session_id=session_id,
             role="assistant",
             content=full_answer,
+            kind="answer",
             citations=citation_dicts,
             latency_ms=latency_ms,
         )
@@ -214,6 +353,7 @@ async def stream_chat(
             "done",
             {
                 "message_id": assistant_message.id,
+                "message_kind": "answer",
                 "total_tokens": token_count,
                 "latency_ms": latency_ms,
             },
@@ -265,7 +405,15 @@ class ChatService:
         message_ids = store.session_messages.get(session_id, [])
         return [_serialize_message(store.messages[mid]).model_dump() for mid in message_ids if mid in store.messages]
 
-    async def build_answer_payload(self, db, *, user_id: int, session_id: str, query: str) -> dict:
+    async def build_answer_payload(
+        self,
+        db,
+        *,
+        user_id: int,
+        session_id: str,
+        query: str,
+        user_location: dict | None = None,
+    ) -> dict:
         """Prepare answer context for streaming."""
         session = store.sessions.get(session_id)
         if session is None or session.user_id != user_id:
@@ -287,6 +435,8 @@ class ChatService:
             "session_id": session_id,
             "query": query,
             "case_profile_summary": build_case_profile_summary(case_profile),
+            "weather_mcp_data": None,
+            "user_location": user_location,
         }
 
     async def stream_answer_events(self, answer_payload: dict):
@@ -296,11 +446,20 @@ class ChatService:
         session_id = answer_payload["session_id"]
         query = answer_payload["query"]
         case_profile_summary = answer_payload.get("case_profile_summary")
+        weather_mcp_data = answer_payload.get("weather_mcp_data")
+        user_location = answer_payload.get("user_location")
         # Build a minimal UserProfile for the legacy stream_chat function
         dummy_user = UserProfile(
             id=user_id, username="", email="", role="user", status="active", created_at=""
         )
-        async for chunk in stream_chat(dummy_user, session_id, query, case_profile_summary=case_profile_summary):
+        async for chunk in stream_chat(
+            dummy_user,
+            session_id,
+            query,
+            case_profile_summary=case_profile_summary,
+            weather_mcp_data=weather_mcp_data,
+            user_location=user_location,
+        ):
             yield chunk
 
 

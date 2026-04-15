@@ -245,10 +245,19 @@ cp .env.example .env
 # 编辑 .env 填入实际配置
 
 # 4. 启动后端 API（开发模式，热重载）
-uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+# 推荐写法：显式指定 app-dir，避免导入路径问题
+uvicorn app.main:app --app-dir backend --reload --host 0.0.0.0 --port 8000
 ```
 
 启动后访问 http://localhost:8000/docs 查看 Swagger 文档。
+
+如果你已经习惯从项目根目录执行：
+
+```bash
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+当前仓库也兼容这种写法；项目根目录下的 `app/` 兼容包会把 `backend/app` 暴露为顶层 `app` 包。
 
 ### Celery Worker 启动
 

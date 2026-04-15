@@ -63,6 +63,22 @@
   line-height: 1.55;
 }
 
+.chatdetail-location-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.chatdetail-location-btn.ant-btn {
+  padding: 0;
+  height: auto;
+  color: var(--sage-deep);
+}
+
 .chatdetail-content {
   flex: 1;
   display: flex;

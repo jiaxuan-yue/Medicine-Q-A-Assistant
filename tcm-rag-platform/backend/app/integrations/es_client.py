@@ -34,6 +34,11 @@ TCM_CHUNKS_MAPPINGS = {
                 "analyzer": "ik_max_word",
                 "search_analyzer": "ik_smart",
             },
+            "normalized_text": {
+                "type": "text",
+                "analyzer": "ik_max_word",
+                "search_analyzer": "ik_smart",
+            },
             "doc_id": {"type": "keyword"},
             "chunk_id": {"type": "keyword"},
             "doc_title": {"type": "keyword"},
@@ -155,7 +160,7 @@ class ESClient:
                 query={
                     "multi_match": {
                         "query": query,
-                        "fields": ["chunk_text^3", "doc_title"],
+                        "fields": ["normalized_text^4", "chunk_text^2", "doc_title"],
                         "type": "best_fields",
                     }
                 },
@@ -170,6 +175,7 @@ class ESClient:
                         "doc_id": source.get("doc_id", ""),
                         "chunk_id": source.get("chunk_id", hit["_id"]),
                         "chunk_text": source.get("chunk_text", ""),
+                        "normalized_text": source.get("normalized_text", source.get("chunk_text", "")),
                         "doc_title": source.get("doc_title", ""),
                         "score": float(hit["_score"]),
                         "metadata": source.get("metadata", {}),

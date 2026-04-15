@@ -4,6 +4,7 @@ import type {
   SSECitationEvent,
   SSEDoneEvent,
   SSEErrorEvent,
+  UserLocationPayload,
 } from '../types';
 
 export interface SSECallbacks {
@@ -17,6 +18,7 @@ export interface SSECallbacks {
 export async function connectSSE(
   sessionId: string,
   query: string,
+  userLocation: UserLocationPayload | null,
   callbacks: SSECallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -28,7 +30,7 @@ export async function connectSSE(
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, user_location: userLocation }),
     signal,
   });
 

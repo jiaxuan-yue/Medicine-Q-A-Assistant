@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     QUERY_REWRITE_ENABLED: bool = True
     GRAPH_RECALL_ENABLED: bool = False
     RERANKER_ENABLED: bool = True
+    LIVE_CONTEXT_ENABLED: bool = True
+    LIVE_CONTEXT_TIMEOUT_SECONDS: float = 5.0
+    LIVE_CONTEXT_TTL_SECONDS: int = 600
+    MCP_ENVIRONMENT_ENABLED: bool = True
+
+    # ── 环境感知 / MCP ───────────────────────────────────
+    IP_GEO_API_URL: str = "http://ip-api.com/json/?lang=zh-CN"
+    WEATHER_PROVIDER: str = "qweather"
+    QWEATHER_API_HOST: str = "https://devapi.qweather.com"
+    QWEATHER_API_TOKEN: str = ""
+    QWEATHER_API_KEY: str = ""
+    AMAP_API_HOST: str = "https://restapi.amap.com"
+    AMAP_API_KEY: str = ""
 
     # ── JWT 安全 ──────────────────────────────────────────
     JWT_SECRET_KEY: str = "change-me-in-production"

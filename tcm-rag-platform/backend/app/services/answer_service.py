@@ -9,6 +9,7 @@ from app.core.logger import get_logger
 from app.integrations.llm_client import llm_client
 from app.schemas.chat import Citation
 from app.schemas.rag import QueryRewriteResult, RetrievalHit
+from app.services.text_normalization_service import annotate_ancient_dosage
 
 logger = get_logger(__name__)
 
@@ -16,6 +17,9 @@ logger = get_logger(__name__)
 async def stream_answer(
     messages: list[dict],
     chunks_used: list[dict] | None = None,
+    *,
+    temperature: float = 0.7,
+    top_p: float = 0.9,
 ) -> AsyncGenerator[dict, None]:
     """Stream LLM answer as SSE-compatible dicts.
 
@@ -30,7 +34,11 @@ async def stream_answer(
     generation_failed = False
 
     try:
-        async for chunk_text in llm_client.chat_stream(messages):
+        async for chunk_text in llm_client.chat_stream(
+            messages,
+            temperature=temperature,
+            top_p=top_p,
+        ):
             full_answer_parts.append(chunk_text)
             token_count += max(1, len(chunk_text))  # rough estimate
             yield {"event": "chunk", "data": {"content": chunk_text}}
@@ -53,7 +61,7 @@ async def stream_answer(
         full_answer_parts.append(error_msg)
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)
-    full_answer = "".join(full_answer_parts)
+    full_answer = annotate_ancient_dosage("".join(full_answer_parts))
 
     # Build citations from chunks_used vs actual answer
     citations: list[dict] = []

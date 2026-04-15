@@ -65,13 +65,15 @@ class LLMClient:
 
     # ── non-streaming ─────────────────────────────────────
     async def generate(self, messages: list[dict], model: str | None = None,
-                       temperature: float = 0.7, max_tokens: int = 2000) -> str:
+                       temperature: float = 0.7, top_p: float = 0.9,
+                       max_tokens: int = 2000) -> str:
         """Non-streaming full response."""
         self._ensure_api_key()
         response = Generation.call(
             model=model or self.model,
             messages=messages,
             temperature=temperature,
+            top_p=top_p,
             max_tokens=max_tokens,
             result_format='message',
         )
@@ -80,20 +82,23 @@ class LLMClient:
         raise RuntimeError(f"LLM API error: {response.code} - {response.message}")
 
     async def chat(self, messages: list[dict], model: str | None = None,
-                   temperature: float = 0.7, max_tokens: int = 2000) -> str:
+                   temperature: float = 0.7, top_p: float = 0.9,
+                   max_tokens: int = 2000) -> str:
         """Alias for generate() — non-streaming single response."""
         return await self.generate(messages, model=model,
-                                   temperature=temperature, max_tokens=max_tokens)
+                                   temperature=temperature, top_p=top_p, max_tokens=max_tokens)
 
     # ── streaming ─────────────────────────────────────────
     async def generate_stream(self, messages: list[dict], model: str | None = None,
-                              temperature: float = 0.7, max_tokens: int = 2000) -> AsyncGenerator[str, None]:
+                              temperature: float = 0.7, top_p: float = 0.9,
+                              max_tokens: int = 2000) -> AsyncGenerator[str, None]:
         """Streaming response — yields incremental content strings."""
         self._ensure_api_key()
         responses = Generation.call(
             model=model or self.model,
             messages=messages,
             temperature=temperature,
+            top_p=top_p,
             max_tokens=max_tokens,
             result_format='message',
             stream=True,
@@ -108,10 +113,12 @@ class LLMClient:
                 raise RuntimeError(f"LLM stream error: {response.code} - {response.message}")
 
     async def chat_stream(self, messages: list[dict], model: str | None = None,
-                          temperature: float = 0.7, max_tokens: int = 2000) -> AsyncGenerator[str, None]:
+                          temperature: float = 0.7, top_p: float = 0.9,
+                          max_tokens: int = 2000) -> AsyncGenerator[str, None]:
         """Alias for generate_stream() — streaming response."""
         async for chunk in self.generate_stream(messages, model=model,
                                                 temperature=temperature,
+                                                top_p=top_p,
                                                 max_tokens=max_tokens):
             yield chunk
 

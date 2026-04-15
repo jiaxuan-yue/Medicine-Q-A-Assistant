@@ -7,6 +7,7 @@ import json
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.schemas.rag import QueryRewriteResult
+from app.services.text_normalization_service import to_simplified_medical
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,7 @@ _LLM_REWRITE_PROMPT = """\
 
 def _normalize_query(query: str) -> str:
     normalized = " ".join(query.strip().split())
+    normalized = to_simplified_medical(normalized)
     for canonical, aliases in ENTITY_ALIASES.items():
         for alias in aliases:
             normalized = normalized.replace(alias, canonical)
@@ -134,9 +136,18 @@ async def _llm_based_rewrite(query: str, history_summary: str | None = None) -> 
         return None
 
 
-async def rewrite_query_async(query: str, history_summary: str | None = None) -> QueryRewriteResult:
-    """Async rewrite: tries LLM first (if enabled), falls back to rule-based."""
-    if settings.QUERY_REWRITE_ENABLED:
+async def rewrite_query_async(
+    query: str,
+    history_summary: str | None = None,
+    *,
+    use_llm: bool = True,
+) -> QueryRewriteResult:
+    """Async rewrite with optional LLM stage.
+
+    Args:
+        use_llm: when False, force rule-based rewrite only.
+    """
+    if settings.QUERY_REWRITE_ENABLED and use_llm:
         result = await _llm_based_rewrite(query, history_summary)
         if result is not None:
             return result

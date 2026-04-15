@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 
+from app.services.text_normalization_service import to_simplified_medical
 
 # ── TCM section header patterns ──────────────────────────────
 
@@ -200,6 +201,7 @@ class ChunkingService:
         return {
             "chunk_index": chunk_index,
             "chunk_text": cleaned,
+            "normalized_text": to_simplified_medical(cleaned),
             "token_count": token_count,
             "metadata_json": {
                 "section": section,

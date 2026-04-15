@@ -39,6 +39,7 @@ class SessionRecord:
     case_profile_id: int | None = None
     case_profile_name: str | None = None
     case_profile_summary: str | None = None
+    followup_state: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=utcnow_iso)
     updated_at: str = field(default_factory=utcnow_iso)
 
@@ -49,6 +50,7 @@ class MessageRecord:
     session_id: str
     role: str
     content: str
+    kind: str = "answer"
     citations: list[dict[str, Any]] | None = None
     rewritten_query: str | None = None
     latency_ms: int | None = None
@@ -239,6 +241,7 @@ class InMemoryStore:
         session_id: str,
         role: str,
         content: str,
+        kind: str = "answer",
         citations: list[dict[str, Any]] | None = None,
         rewritten_query: str | None = None,
         latency_ms: int | None = None,
@@ -248,6 +251,7 @@ class InMemoryStore:
             session_id=session_id,
             role=role,
             content=content,
+            kind=kind,
             citations=citations,
             rewritten_query=rewritten_query,
             latency_ms=latency_ms,

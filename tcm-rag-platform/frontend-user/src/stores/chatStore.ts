@@ -17,7 +17,7 @@ interface ChatState {
   loadMessages: (sessionId: string) => Promise<void>;
   appendStreamChunk: (content: string) => void;
   setStreamingCitations: (citations: Citation[]) => void;
-  finishStream: (messageId: string) => void;
+  finishStream: (messageId: string, messageKind?: 'answer' | 'followup') => void;
   setStreaming: (streaming: boolean) => void;
   addUserMessage: (content: string) => void;
 }
@@ -77,12 +77,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streamingCitations: citations });
   },
 
-  finishStream: (messageId: string) => {
+  finishStream: (messageId: string, messageKind = 'answer') => {
     const { streamingContent, streamingCitations } = get();
     const assistantMessage: Message = {
       id: messageId,
       role: 'assistant',
       content: streamingContent,
+      kind: messageKind,
       citations: streamingCitations.length > 0 ? streamingCitations : undefined,
       created_at: new Date().toISOString(),
     };
@@ -103,6 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       id: `user-${Date.now()}`,
       role: 'user',
       content,
+      kind: 'user',
       created_at: new Date().toISOString(),
     };
     set((state) => ({

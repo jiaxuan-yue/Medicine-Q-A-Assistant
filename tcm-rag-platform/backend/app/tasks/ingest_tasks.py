@@ -111,7 +111,7 @@ def ingest_document(self, doc_id: str, file_path: str):
         logger.info("[ingest] step 4/8: saved %d chunks to DB", len(chunk_records))
 
         # ── 5. Generate embeddings ──────────────────────────
-        chunk_texts = [c["chunk_text"] for c in chunk_dicts]
+        chunk_texts = [c.get("normalized_text", c["chunk_text"]) for c in chunk_dicts]
         embedding_client = EmbeddingClient()
         embeddings = _run_async(embedding_client.embed_texts(chunk_texts))
         logger.info("[ingest] step 5/8: generated %d embeddings", len(embeddings))
@@ -125,6 +125,7 @@ def ingest_document(self, doc_id: str, file_path: str):
                 "doc_id": doc_id,
                 "doc_title": doc_title,
                 "chunk_text": chunk_dicts[i]["chunk_text"],
+                "normalized_text": chunk_dicts[i].get("normalized_text", chunk_dicts[i]["chunk_text"]),
                 "metadata": chunk_dicts[i].get("metadata_json", {}),
             })
         es_count = _run_async(_index_in_es(es_docs))
@@ -138,6 +139,7 @@ def ingest_document(self, doc_id: str, file_path: str):
                 "doc_id": doc_id,
                 "doc_title": doc_title,
                 "chunk_text": chunk_dicts[i]["chunk_text"],
+                "normalized_text": chunk_dicts[i].get("normalized_text", chunk_dicts[i]["chunk_text"]),
                 "metadata": chunk_dicts[i].get("metadata_json", {}),
             })
         _run_async(_add_to_vector_store(embeddings, faiss_meta))

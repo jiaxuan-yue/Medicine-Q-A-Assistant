@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Install system dependencies
 RUN apt-get update && \
@@ -10,6 +11,7 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY app/ ./app/
 COPY backend/ ./backend/
 
 CMD ["celery", "-A", "backend.app.tasks.celery_app", "worker", "--loglevel=info"]

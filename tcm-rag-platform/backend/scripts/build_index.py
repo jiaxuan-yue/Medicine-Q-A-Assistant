@@ -237,6 +237,7 @@ def chunk_one_book(book: dict) -> list[dict]:
             "doc_title": book["title"],
             "chunk_id": chunk_id,
             "chunk_text": ch["chunk_text"],
+            "normalized_text": ch.get("normalized_text", ch["chunk_text"]),
             "metadata": ch.get("metadata_json", {}),
         })
     return chunks
@@ -255,6 +256,7 @@ TCM_CHUNKS_MAPPINGS_FALLBACK = {
     "mappings": {
         "properties": {
             "chunk_text": {"type": "text"},
+            "normalized_text": {"type": "text"},
             "doc_id": {"type": "keyword"},
             "chunk_id": {"type": "keyword"},
             "doc_title": {"type": "keyword"},
@@ -442,7 +444,7 @@ async def embed_and_store_chunks(
     batch_retries: int = 3,
 ) -> int:
     """Embed chunks for one book and add to FAISS index."""
-    texts = [ch["chunk_text"] for ch in chunks]
+    texts = [ch.get("normalized_text", ch["chunk_text"]) for ch in chunks]
     embeddings = await embed_batches_concurrent(
         texts,
         workers,
@@ -457,6 +459,7 @@ async def embed_and_store_chunks(
             "doc_id": ch["doc_id"],
             "doc_title": ch["doc_title"],
             "chunk_text": ch["chunk_text"],
+            "normalized_text": ch.get("normalized_text", ch["chunk_text"]),
             "metadata": ch.get("metadata", {}),
         }
         for ch in chunks

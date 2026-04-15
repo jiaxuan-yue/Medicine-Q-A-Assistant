@@ -7,6 +7,12 @@ import { useSSE } from '../hooks/useSSE';
 import ChatWindow from '../components/ChatWindow';
 import UploadImagePanel from '../components/UploadImagePanel';
 import { getApiErrorMessage } from '../utils/apiError';
+import {
+  clearCachedUserLocation,
+  getCachedUserLocation,
+  requestBrowserLocation,
+} from '../utils/location';
+import type { UserLocationPayload } from '../types';
 import './ChatDetail.css';
 
 const { Header, Content, Footer } = Layout;
@@ -18,11 +24,44 @@ const ChatDetail: React.FC = () => {
   const navigate = useNavigate();
   const [inputValue, setInputValue] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<UserLocationPayload | null>(() => getCachedUserLocation());
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'locating' | 'ready' | 'denied' | 'unsupported' | 'error'>(
+    () => (getCachedUserLocation() ? 'ready' : 'idle'),
+  );
 
   const { sessions, messages, loading, loadMessages, loadSessions, isStreaming, streamingContent } =
     useChatStore();
   const { sendMessage, error, cancelStream } = useSSE();
   const currentSession = sessions.find((item) => item.session_id === sessionId);
+
+  const requestRealLocation = useCallback(async () => {
+    if (!navigator.geolocation) {
+      setLocationStatus('unsupported');
+      throw new Error('当前浏览器不支持定位');
+    }
+
+    setLocationStatus('locating');
+    try {
+      const location = await requestBrowserLocation();
+      setUserLocation(location);
+      setLocationStatus('ready');
+      return location;
+    } catch (err) {
+      const errorText = (err as Error).message || '定位失败';
+      if (errorText.includes('denied') || errorText.includes('拒绝') || errorText.includes('User denied')) {
+        setLocationStatus('denied');
+      } else {
+        setLocationStatus('error');
+      }
+      throw err;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (userLocation) {
+      setLocationStatus('ready');
+    }
+  }, [userLocation]);
 
   useEffect(() => {
     if (sessions.length === 0) {
@@ -60,13 +99,29 @@ const ChatDetail: React.FC = () => {
   const handleSend = async () => {
     const query = inputValue.trim();
     if (!query || !sessionId || isStreaming) return;
+
+    let resolvedLocation = userLocation;
+    if (!resolvedLocation && locationStatus !== 'unsupported') {
+      try {
+        resolvedLocation = await requestRealLocation();
+        message.success('已获取你的真实位置，将优先用于天气与节气调理建议');
+      } catch (err) {
+        const text = (err as Error).message || '定位失败';
+        if (locationStatus === 'denied' || text.includes('denied') || text.includes('拒绝')) {
+          message.warning('你已拒绝定位授权，本轮将退回到非精确位置方案');
+        } else {
+          message.warning('暂时无法获取真实位置，本轮将退回到非精确位置方案');
+        }
+      }
+    }
+
     setInputValue('');
     // Clear image attachment after send
     if (imagePreview) {
       URL.revokeObjectURL(imagePreview);
     }
     setImagePreview(null);
-    await sendMessage(sessionId, query);
+    await sendMessage(sessionId, query, resolvedLocation);
   };
 
   const handleImageSelected = useCallback((file: File) => {
@@ -77,6 +132,17 @@ const ChatDetail: React.FC = () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleRefreshLocation = async () => {
+    clearCachedUserLocation();
+    setUserLocation(null);
+    try {
+      await requestRealLocation();
+      message.success('位置已刷新，后续回答会优先使用你的真实位置');
+    } catch (err) {
+      message.warning((err as Error).message || '重新获取位置失败');
     }
   };
 
@@ -101,6 +167,23 @@ const ChatDetail: React.FC = () => {
                 {currentSession.case_profile_summary ? ` · ${currentSession.case_profile_summary}` : ''}
               </div>
             )}
+            <div className="chatdetail-location-line">
+              <span>
+                真实位置：
+                {locationStatus === 'ready' && userLocation
+                  ? userLocation.label || '已获取'
+                  : locationStatus === 'locating'
+                    ? '定位中...'
+                    : locationStatus === 'denied'
+                      ? '用户已拒绝授权'
+                      : locationStatus === 'unsupported'
+                        ? '当前浏览器不支持定位'
+                        : '未获取'}
+              </span>
+              <Button type="link" size="small" className="chatdetail-location-btn" onClick={handleRefreshLocation}>
+                {locationStatus === 'ready' ? '刷新位置' : '授权位置'}
+              </Button>
+            </div>
           </div>
         </div>
       </Header>

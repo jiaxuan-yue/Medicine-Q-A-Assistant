@@ -19,6 +19,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   streamContent,
 }) => {
   const isUser = message.role === 'user';
+  const isFollowup = message.kind === 'followup';
   const content = isStreaming ? (streamContent || '') : message.content;
 
   // Parse messageId as number for feedback API (strip non-numeric prefix)
@@ -29,7 +30,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     <div className={`message-bubble ${isUser ? 'message-user' : 'message-assistant'}`}>
       <div className="message-meta-line">
         <div className="message-role-chip">
-          {isUser ? '我的问题' : '知识助手'}
+          {isUser ? '我的问题' : isFollowup ? '追问助手' : '知识助手'}
         </div>
         <div className="message-time">
           {new Date(message.created_at).toLocaleTimeString('zh-CN', {
@@ -74,7 +75,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
           {!isUser && !isStreaming && message.citations && message.citations.length > 0 && (
             <CitationPanel citations={message.citations} />
           )}
-          {!isUser && hasValidId && (
+          {!isUser && !isFollowup && hasValidId && (
             <FeedbackActions messageId={numericId} />
           )}
         </div>
