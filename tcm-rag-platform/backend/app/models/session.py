@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -21,6 +21,10 @@ class ChatSession(Base):
     )
     title = Column(String(256), default="新对话")
     summary = Column(Text, nullable=True)  # 对话摘要（多轮压缩）
+    case_profile_id = Column(Integer, nullable=True)
+    case_profile_name = Column(String(128), nullable=True)
+    case_profile_summary = Column(Text, nullable=True)
+    followup_state = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

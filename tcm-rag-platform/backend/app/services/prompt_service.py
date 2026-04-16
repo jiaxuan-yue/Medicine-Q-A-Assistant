@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """\
 1. 先在内部判断用户真正想要的是哪一类回答：简短知识问答、轻度建议、还是个性化食疗推荐。
 2. 这个判断过程不要直接展示给用户，不要输出你的推理链，只输出最终答案。
 3. 默认优先短答，避免每次都展开成长篇大论；只有用户明确要求推荐方案，或确实需要结合多维上下文做判断时，才展开更多结构。
+4. 如果用户只是寒暄、打招呼、感谢或确认在线状态，可以自然简短回应，不需要检索、不需要引用，也不要展开医学建议。
 
 ## 证据使用要求
 1. 代茶饮和煲汤每一条建议都必须关联书名，如《本草纲目》。
@@ -57,6 +58,52 @@ class PromptService:
         Returns:
             A list of message dicts: [{"role": ..., "content": ...}]
         """
+        if answer_style == "chat":
+            messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            if conversation_history:
+                for msg in conversation_history[-4:]:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "## 对话模式\n"
+                        "这是一次寒暄或简短对话，不需要检索古籍，不需要引用，不要展开成长篇医学说明。\n\n"
+                        "## 回答要求\n"
+                        "1. 直接自然回应即可。\n"
+                        "2. 总篇幅尽量控制在 1-2 句。\n"
+                        "3. 如果合适，可以轻轻引导用户继续描述具体症状或需求。\n\n"
+                        f"## 用户问题\n{user_query}"
+                    ),
+                }
+            )
+            return messages
+
+        if answer_style == "consult":
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            if conversation_history:
+                for msg in conversation_history[-6:]:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "## 轻问诊模式\n"
+                        "这是一次简单问答或生活化问诊，不需要检索古籍，不需要引用出处。\n\n"
+                        "## 回答要求\n"
+                        "1. 基于用户问题、基础病例和本轮补充信息，给出简短、自然、可执行的回答。\n"
+                        "2. 总篇幅尽量控制在 2-4 句。\n"
+                        "3. 若信息仍有限，要明确说明判断有限，并给 1-2 个最关键观察点。\n"
+                        "4. 不要输出引用依据，不要假装查到了古籍原文。\n\n"
+                        f"## 用户基础病例\n{case_profile_summary or '（当前未提供基础病例信息）'}\n\n"
+                        f"## 本轮补充\n{(generation_context or {}).get('clarification_context') or '未额外补充'}\n\n"
+                        f"## 环境上下文\n{(generation_context or {}).get('environmental_context') or '时间：未知 | 位置：未提供 | 天气：未获取'}\n\n"
+                        f"## 用户问题\n{user_query}"
+                    ),
+                }
+            )
+            return messages
+
         # --- build context block ---
         retrieved_ancient_chunks = (generation_context or {}).get("retrieved_ancient_chunks") or []
         if retrieved_ancient_chunks:

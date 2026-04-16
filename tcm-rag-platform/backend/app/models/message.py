@@ -31,6 +31,7 @@ class Message(Base):
     )
     role = Column(Enum(MessageRole), nullable=False)
     content = Column(Text, nullable=False)  # 用户原始输入或模型回答
+    kind = Column(String(32), nullable=True, default="answer")
     rewritten_query = Column(Text, nullable=True)  # 改写后的查询
     citations = Column(JSON, nullable=True)  # 引用信息 JSON
     latency_ms = Column(Integer, nullable=True)  # 端到端延迟

@@ -51,6 +51,87 @@ _DIETARY_RECOMMENDATION_MARKERS = (
     "怎么喝",
 )
 
+_SMALLTALK_EXACT_MARKERS = {
+    "你好",
+    "你好呀",
+    "你好啊",
+    "哈喽",
+    "hello",
+    "hi",
+    "在吗",
+    "在嘛",
+    "早上好",
+    "中午好",
+    "下午好",
+    "晚上好",
+    "谢谢",
+    "谢谢你",
+    "多谢",
+    "辛苦了",
+    "好的",
+    "好滴",
+    "收到",
+    "嗯",
+    "嗯嗯",
+}
+
+_MEDICAL_HINT_MARKERS = (
+    "疼",
+    "痛",
+    "胀",
+    "痒",
+    "热",
+    "寒",
+    "咳",
+    "眠",
+    "药",
+    "方",
+    "症",
+    "舌",
+    "脉",
+    "食疗",
+    "凉茶",
+    "煲汤",
+)
+
+_KNOWLEDGE_SEARCH_MARKERS = (
+    "古籍",
+    "出处",
+    "原文",
+    "医书",
+    "哪本书",
+    "文献",
+    "经典",
+    "本草纲目",
+    "黄帝内经",
+    "伤寒论",
+    "金匮要略",
+    "方剂",
+    "方子",
+    "药方",
+    "药材",
+    "中药",
+    "当归",
+    "桂枝汤",
+)
+
+_SIMPLE_CONSULT_MARKERS = (
+    "我现在",
+    "我最近",
+    "最近",
+    "有点",
+    "总是",
+    "老是",
+    "感觉",
+    "是不是",
+    "正常吗",
+    "怎么办",
+    "要紧吗",
+    "严重吗",
+    "能吃吗",
+    "要忌口吗",
+)
+
 
 @dataclass(slots=True)
 class ToolPlan:
@@ -67,9 +148,57 @@ class ToolPlan:
 class LightAgentService:
     """Heuristic planner for a tool-based lightweight agent chain."""
 
+    @staticmethod
+    def is_smalltalk(query: str) -> bool:
+        normalized = (query or "").strip().lower().strip("，,。.!！？?~～ ")
+        if not normalized:
+            return False
+        if normalized in _SMALLTALK_EXACT_MARKERS:
+            return True
+        if len(normalized) <= 8 and any(item in normalized for item in ("你好", "哈喽", "hello", "hi", "谢谢", "在吗")):
+            if not any(marker in normalized for marker in _MEDICAL_HINT_MARKERS):
+                return True
+        return False
+
+    @staticmethod
+    def requires_search(query: str) -> bool:
+        normalized = (query or "").strip()
+        if not normalized:
+            return False
+        return any(marker in normalized for marker in _KNOWLEDGE_SEARCH_MARKERS)
+
+    @staticmethod
+    def is_simple_consult(query: str) -> bool:
+        normalized = (query or "").strip()
+        if not normalized:
+            return False
+        if LightAgentService.is_smalltalk(normalized):
+            return False
+        if any(marker in normalized for marker in _DIETARY_RECOMMENDATION_MARKERS):
+            return False
+        if any(marker in normalized for marker in _DIRECT_KNOWLEDGE_MARKERS):
+            return False
+        if LightAgentService.requires_search(normalized):
+            return False
+        has_consult_marker = any(marker in normalized for marker in _SIMPLE_CONSULT_MARKERS)
+        has_medical_hint = any(marker in normalized for marker in _MEDICAL_HINT_MARKERS)
+        return has_medical_hint or has_consult_marker
+
     def plan(self, query: str, history_summary: str | None = None) -> ToolPlan:
         query = (query or "").strip()
         q_len = len(query)
+        if self.is_smalltalk(query):
+            return ToolPlan(
+                strategy="smalltalk",
+                use_llm_rewrite=False,
+                use_rerank=False,
+                retrieval_top_k=0,
+                answer_top_k=0,
+                rerank_top_k=0,
+                answer_style="chat",
+                reason="寒暄或简短对话，直接短答，跳过检索与引用。",
+            )
+
         has_colloquial = any(marker in query for marker in _COLLOQUIAL_MARKERS)
         is_direct_knowledge = any(marker in query for marker in _DIRECT_KNOWLEDGE_MARKERS)
         is_complex = any(marker in query for marker in _COMPLEX_MARKERS) or q_len >= 24
@@ -88,6 +217,18 @@ class LightAgentService:
                 rerank_top_k=4,
                 answer_style="dietary",
                 reason="用户明确在要代茶饮/煲汤/食疗推荐，保留推荐型模板，但压缩为必要信息。",
+            )
+
+        if self.is_simple_consult(query):
+            return ToolPlan(
+                strategy="no_search_consult",
+                use_llm_rewrite=False,
+                use_rerank=False,
+                retrieval_top_k=0,
+                answer_top_k=0,
+                rerank_top_k=0,
+                answer_style="consult",
+                reason="简单问诊或生活化咨询，不需要搜索医术依据，先走简短问诊/答复。",
             )
 
         if is_direct_knowledge and q_len <= 18 and not has_colloquial:

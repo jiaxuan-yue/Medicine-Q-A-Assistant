@@ -1,8 +1,10 @@
 bind = "0.0.0.0:8000"
-workers = 4
+workers = 8  # 根据CPU核心数调整，建议 CPU核心数 * 2
 worker_class = "uvicorn.workers.UvicornWorker"
 timeout = 120
 keepalive = 5
 accesslog = "-"
 errorlog = "-"
 loglevel = "info"
+max_requests = 1000  # 每个worker处理1000个请求后重启，避免内存泄漏
+max_requests_jitter = 50  # 随机抖动，避免所有worker同时重启

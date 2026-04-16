@@ -78,12 +78,14 @@ class Settings(BaseSettings):
 
     # ── 环境感知 / MCP ───────────────────────────────────
     IP_GEO_API_URL: str = "http://ip-api.com/json/?lang=zh-CN"
-    WEATHER_PROVIDER: str = "qweather"
+    WEATHER_PROVIDER: str = "auto"
     QWEATHER_API_HOST: str = "https://devapi.qweather.com"
     QWEATHER_API_TOKEN: str = ""
     QWEATHER_API_KEY: str = ""
     AMAP_API_HOST: str = "https://restapi.amap.com"
     AMAP_API_KEY: str = ""
+    OPEN_METEO_API_HOST: str = "https://api.open-meteo.com"
+    OPEN_METEO_GEOCODING_API_HOST: str = "https://geocoding-api.open-meteo.com"
 
     # ── JWT 安全 ──────────────────────────────────────────
     JWT_SECRET_KEY: str = "change-me-in-production"
@@ -138,7 +140,11 @@ class Settings(BaseSettings):
     @property
     def SQLALCHEMY_SYNC_DATABASE_URI(self) -> str:
         if self.DATABASE_URL:
-            return self.DATABASE_URL.replace("+aiosqlite", "")
+            return (
+                self.DATABASE_URL
+                .replace("+aiosqlite", "")
+                .replace("+asyncmy", "+pymysql")
+            )
         return f"sqlite:///{DEFAULT_SQLITE_PATH}"
 
     model_config = SettingsConfigDict(

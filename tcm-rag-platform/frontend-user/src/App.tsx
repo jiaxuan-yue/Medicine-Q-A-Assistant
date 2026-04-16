@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import {
   BrowserRouter,
   Routes,
@@ -14,6 +14,8 @@ import Register from './pages/Register';
 import ChatList from './pages/ChatList';
 import ChatDetail from './pages/ChatDetail';
 import CaseProfilesGuard from './components/CaseProfilesGuard';
+
+const Bookshelf = lazy(() => import('./pages/Bookshelf'));
 
 // Route guard component
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -133,6 +135,16 @@ const App: React.FC = () => {
                   <CaseProfilesGuard>
                     <ChatDetail />
                   </CaseProfilesGuard>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/bookshelf"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={null}>
+                    <Bookshelf />
+                  </Suspense>
                 </RequireAuth>
               }
             />

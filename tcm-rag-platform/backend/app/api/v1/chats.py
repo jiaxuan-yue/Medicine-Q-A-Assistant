@@ -77,7 +77,7 @@ async def stream_chat(
         user_location=payload.user_location.model_dump() if payload.user_location else None,
     )
     return StreamingResponse(
-        chat_service.stream_answer_events(answer_payload),
+        chat_service.stream_answer_events(db, answer_payload),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

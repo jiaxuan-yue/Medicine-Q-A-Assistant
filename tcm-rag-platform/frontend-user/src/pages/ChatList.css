@@ -96,8 +96,8 @@
 .chatlist-hero-copy h1 {
   max-width: 620px;
   margin: 16px 0 12px;
-  font-size: 31px;
-  line-height: 1.2;
+  font-size: 40px;
+  line-height: 1.12;
   white-space: nowrap;
   color: var(--ink);
 }
@@ -192,9 +192,90 @@
   width: 100%;
 }
 
+.chatlist-cta-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 .chatlist-note-list {
   display: grid;
   gap: 12px;
+}
+
+.chatlist-library-entry {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+  padding: 18px 18px 20px;
+  border: 1px solid rgba(30, 52, 45, 0.08);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(198, 150, 84, 0.2), transparent 32%),
+    linear-gradient(145deg, rgba(68, 44, 28, 0.96), rgba(108, 69, 42, 0.94));
+  color: #f7f1e3;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.chatlist-library-entry::after {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(255, 232, 196, 0.12);
+  border-radius: 18px;
+  pointer-events: none;
+}
+
+.chatlist-library-entry:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
+.chatlist-library-entry span,
+.chatlist-library-entry strong,
+.chatlist-library-entry p,
+.chatlist-library-entry em {
+  position: relative;
+  z-index: 1;
+}
+
+.chatlist-library-entry span {
+  display: inline-block;
+  color: rgba(247, 241, 227, 0.72);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.chatlist-library-entry strong {
+  display: block;
+  margin-top: 10px;
+  font-family: 'Noto Serif SC', serif;
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+.chatlist-library-entry p {
+  margin-top: 8px;
+  color: rgba(247, 241, 227, 0.78);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.chatlist-library-entry em {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #f1d9a7;
+  font-size: 13px;
+  font-style: normal;
 }
 
 .chatlist-note {
@@ -356,7 +437,7 @@
   }
 
   .chatlist-hero-copy h1 {
-    font-size: 26px;
+    font-size: 32px;
     white-space: normal;
   }
 }

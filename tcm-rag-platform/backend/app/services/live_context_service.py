@@ -45,6 +45,37 @@ _SOLAR_TERM_BOUNDARIES: list[tuple[tuple[int, int], str]] = [
 _CACHE_LOCK = RLock()
 _CACHE: dict[str, Any] = {"expires_at": 0.0, "value": None}
 
+_OPEN_METEO_WEATHER_CODES = {
+    0: "晴",
+    1: "大致晴朗",
+    2: "局部多云",
+    3: "阴",
+    45: "有雾",
+    48: "冻雾",
+    51: "毛毛雨",
+    53: "小雨",
+    55: "中雨",
+    56: "冻毛毛雨",
+    57: "强冻毛毛雨",
+    61: "小雨",
+    63: "中雨",
+    65: "大雨",
+    66: "冻雨",
+    67: "强冻雨",
+    71: "小雪",
+    73: "中雪",
+    75: "大雪",
+    77: "冰粒",
+    80: "阵雨",
+    81: "较强阵雨",
+    82: "强阵雨",
+    85: "阵雪",
+    86: "强阵雪",
+    95: "雷阵雨",
+    96: "雷阵雨伴冰雹",
+    99: "强雷暴伴冰雹",
+}
+
 
 def get_current_solar_term(now: datetime | None = None) -> str:
     """Approximate current solar term using fixed date boundaries."""
@@ -232,6 +263,95 @@ def _get_amap_now(
     }
 
 
+def _lookup_openmeteo_coordinates(
+    session: requests.Session,
+    *,
+    city: str,
+    province: str,
+) -> tuple[float, float, str, str]:
+    query = f"{province}{city}".strip() or city or province
+    if not query:
+        raise RuntimeError("Open-Meteo geocoding needs city/province")
+    payload = _safe_request_json(
+        session,
+        "GET",
+        f"{settings.OPEN_METEO_GEOCODING_API_HOST.rstrip('/')}/v1/search",
+        params={"name": query, "count": 5, "language": "zh", "format": "json"},
+        timeout=settings.LIVE_CONTEXT_TIMEOUT_SECONDS,
+    )
+    results = payload.get("results") or []
+    if not results:
+        raise RuntimeError(f"Open-Meteo geocoding failed: {payload}")
+    first = results[0]
+    return (
+        float(first["latitude"]),
+        float(first["longitude"]),
+        str(first.get("name") or city or ""),
+        str(first.get("admin1") or province or ""),
+    )
+
+
+def _get_openmeteo_now(
+    session: requests.Session,
+    *,
+    latitude: float,
+    longitude: float,
+) -> dict[str, str]:
+    payload = _safe_request_json(
+        session,
+        "GET",
+        f"{settings.OPEN_METEO_API_HOST.rstrip('/')}/v1/forecast",
+        params={
+            "latitude": f"{latitude:.6f}",
+            "longitude": f"{longitude:.6f}",
+            "current": "temperature_2m,relative_humidity_2m,weather_code",
+            "timezone": "auto",
+        },
+        timeout=settings.LIVE_CONTEXT_TIMEOUT_SECONDS,
+    )
+    current = payload.get("current") or {}
+    if not current:
+        raise RuntimeError(f"Open-Meteo current weather failed: {payload}")
+    weather_code = current.get("weather_code")
+    try:
+        weather_code_int = int(weather_code)
+    except (TypeError, ValueError):
+        weather_code_int = None
+    return {
+        "temperature": str(current.get("temperature_2m", "")).strip(),
+        "humidity": str(current.get("relative_humidity_2m", "")).strip(),
+        "condition": _OPEN_METEO_WEATHER_CODES.get(weather_code_int, "天气未知"),
+        "source": "openmeteo",
+    }
+
+
+def _get_openmeteo_weather(
+    session: requests.Session,
+    *,
+    city: str,
+    province: str,
+    coordinates: tuple[float, float] | None = None,
+) -> dict[str, str]:
+    resolved_city = city
+    resolved_province = province
+    if coordinates:
+        longitude, latitude = coordinates
+    else:
+        latitude, longitude, resolved_city, resolved_province = _lookup_openmeteo_coordinates(
+            session,
+            city=city,
+            province=province,
+        )
+    weather = _get_openmeteo_now(
+        session,
+        latitude=float(latitude),
+        longitude=float(longitude),
+    )
+    weather["city"] = resolved_city
+    weather["province"] = resolved_province
+    return weather
+
+
 def _get_live_weather(
     session: requests.Session,
     *,
@@ -239,29 +359,64 @@ def _get_live_weather(
     province: str,
     coordinates: tuple[float, float] | None = None,
 ) -> dict[str, str]:
-    provider = (settings.WEATHER_PROVIDER or "qweather").strip().lower()
-    if provider == "amap":
-        adcode, resolved_city, resolved_province = _lookup_amap_adcode(
-            session,
-            city=city,
-            province=province,
-            coordinates=coordinates,
-        )
-        weather = _get_amap_now(session, adcode=adcode)
-        weather["city"] = resolved_city
-        weather["province"] = resolved_province
-        return weather
+    provider = (settings.WEATHER_PROVIDER or "auto").strip().lower()
+    qweather_enabled = bool((settings.QWEATHER_API_TOKEN or settings.QWEATHER_API_KEY or "").strip())
+    amap_enabled = bool((settings.AMAP_API_KEY or "").strip())
 
-    location_id, resolved_city, resolved_province = _lookup_qweather_location_id(
-        session,
-        city=city,
-        province=province,
-        coordinates=coordinates,
-    )
-    weather = _get_qweather_now(session, location_id=location_id)
-    weather["city"] = resolved_city
-    weather["province"] = resolved_province
-    return weather
+    candidates: list[str]
+    if provider in {"openmeteo", "open-meteo"}:
+        candidates = ["openmeteo"]
+    elif provider == "amap":
+        candidates = ["amap", "openmeteo"]
+    elif provider == "qweather":
+        candidates = ["qweather", "amap", "openmeteo"]
+    else:
+        candidates = []
+        if qweather_enabled:
+            candidates.append("qweather")
+        if amap_enabled:
+            candidates.append("amap")
+        candidates.append("openmeteo")
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            if candidate == "qweather":
+                location_id, resolved_city, resolved_province = _lookup_qweather_location_id(
+                    session,
+                    city=city,
+                    province=province,
+                    coordinates=coordinates,
+                )
+                weather = _get_qweather_now(session, location_id=location_id)
+                weather["city"] = resolved_city
+                weather["province"] = resolved_province
+                return weather
+
+            if candidate == "amap":
+                adcode, resolved_city, resolved_province = _lookup_amap_adcode(
+                    session,
+                    city=city,
+                    province=province,
+                    coordinates=coordinates,
+                )
+                weather = _get_amap_now(session, adcode=adcode)
+                weather["city"] = resolved_city
+                weather["province"] = resolved_province
+                return weather
+
+            if candidate == "openmeteo":
+                return _get_openmeteo_weather(
+                    session,
+                    city=city,
+                    province=province,
+                    coordinates=coordinates,
+                )
+        except Exception as exc:
+            last_error = exc
+            logger.warning("weather provider %s failed: %s", candidate, exc)
+
+    raise RuntimeError(str(last_error) if last_error else "No weather provider available")
 
 
 def _format_environmental_context(

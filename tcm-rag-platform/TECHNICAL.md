@@ -16,6 +16,7 @@
 - [配置管理](#配置管理)
 - [部署指南](#部署指南)
 - [扩展指南](#扩展指南)
+- [扩展指南](#扩展指南)
 
 ---
 
@@ -66,6 +67,10 @@
 │  │ 对话管理  │ │ 评测模块 │ │ 反馈系统  │ │ 管理后台   │          │
 │  │(Session) │ │ (Eval)  │ │(Feedback)│ │ (Admin)    │          │
 │  └──────────┘ └─────────┘ └──────────┘ └────────────┘          │
+│  ┌──────────┐ ┌─────────┐ ┌──────────┐                         │
+│  │ 追问服务  │ │舌象分析  │ │ 自适应    │                         │
+│  │(FollowUp)│ │(Tongue) │ │ RAG编排   │                         │
+│  └──────────┘ └─────────┘ └──────────┘                         │
 └──────┬──────────┬──────────┬──────────┬──────────┬──────────────┘
        │          │          │          │          │
        ▼          ▼          ▼          ▼          ▼
@@ -87,7 +92,9 @@
 - **前后端分离**：前端 React 应用通过 HTTP API 与后端通信，SSE 实现流式答案
 - **Nginx 网关**：统一入口路由，API 代理支持 WebSocket 和 SSE
 - **服务层设计**：后端按业务领域拆分为独立 Service，通过依赖注入解耦
+- **追问系统**：RAG 流水线前置闸门，检查问诊槽位是否齐全，不齐全时主动追问补齐
 - **三路检索**：稀疏（ES BM25）+ 稠密（FAISS 向量）+ 图谱（Neo4j 实体扩展），通过 RRF 融合
+- **舌象分析**：多模态解析用户舌象照片，结果注入追问上下文和 RAG prompt
 - **异步处理**：文档入库通过 Celery 异步执行，避免阻塞 API 请求
 - **优雅降级**：每个外部依赖（Redis/ES/Neo4j/FAISS）不可用时系统均可降级运行
 
@@ -146,6 +153,7 @@
 | `qwen-plus` | 查询改写、实体抽取 |
 | `text-embedding-v3` | 文本向量化（1024 维） |
 | `gte-rerank` | 检索结果重排序 |
+| `qwen-vl-max` | 舌象多模态解析（舌色/舌苔/舌形/体质倾向） |
 
 ---
 
@@ -173,7 +181,8 @@ tcm-rag-platform/
 │       │       ├── admin.py        #   管理后台接口（用户管理/审核/仪表盘）
 │       │       ├── feedback.py     #   反馈接口
 │       │       ├── evaluation.py   #   评测接口
-│       │       └── knowledge_graph.py  # 知识图谱接口
+│       │       ├── knowledge_graph.py  # 知识图谱接口
+│       │       └── tongue.py       #   舌象分析接口
 │       │
 │       ├── core/                   # 核心模块
 │       │   ├── config.py           #   配置管理（pydantic-settings）
@@ -203,7 +212,8 @@ tcm-rag-platform/
 │       │   ├── graph_entity.py     #   图谱实体模型
 │       │   ├── answer_log.py       #   答案日志模型
 │       │   ├── retrieval_log.py    #   检索日志模型
-│       │   └── rerank_log.py       #   重排日志模型
+│       │   ├── rerank_log.py       #   重排日志模型
+│       │   └── tongue_record.py    #   舌象记录模型
 │       │
 │       ├── schemas/                # Pydantic Schema（请求/响应）
 │       │   ├── auth.py             #   认证 Schema
@@ -237,14 +247,18 @@ tcm-rag-platform/
 │       │   ├── evaluation_service.py     # 评测服务
 │       │   ├── admin_service.py          # 管理后台服务
 │       │   ├── bootstrap_service.py      # 启动初始化服务
-│       │   └── store.py                  # 内存数据缓存层
+│       │   ├── store.py                  # 内存数据缓存层
+│       │   ├── followup_service.py       # 追问服务（槽位状态机）
+│       │   ├── light_agent_service.py    # 自适应 RAG 编排（Light Agent）
+│       │   ├── tongue_analysis_service.py # 舌象多模态解析服务
 │       │
 │       ├── integrations/           # 外部服务集成客户端
 │       │   ├── es_client.py        #   Elasticsearch 客户端
 │       │   ├── vector_store.py     #   FAISS 向量存储
 │       │   ├── neo4j_client.py     #   Neo4j 图数据库客户端
 │       │   ├── llm_client.py       #   DashScope LLM 客户端
-│       │   └── embedding_client.py #   DashScope Embedding 客户端
+│       │   ├── embedding_client.py #   DashScope Embedding 客户端
+│       │   └── multimodal_client.py #  DashScope 多模态客户端（qwen-vl）
 │       │
 │       ├── tasks/                  # Celery 异步任务
 │       │   ├── __init__.py         #   Celery App 配置
@@ -357,6 +371,13 @@ tcm-rag-platform/
 用户提问
    │
    ▼
+┌─────────────────────────┐
+│ 0. 追问闸门（前置）       │  → followup_service.py
+│    检查问诊槽位是否齐全    │     process_turn()
+│    不齐全 → 返回追问消息   │     （阻断 RAG 流程）
+│    齐全 → 继续             │
+└─────────┬───────────────┘
+          ▼
 ┌─────────────────────────┐
 │ 1. 查询改写               │  → query_rewrite_service.py
 │    - 规则归一化            │     _normalize_query()
@@ -553,6 +574,56 @@ tcm-rag-platform/
 
 ---
 
+### 7. 追问系统（槽位收集状态机）
+
+**相关文件**：`backend/app/services/followup_service.py`
+
+#### 功能概述
+
+在 RAG 流水线执行前，先检查关键问诊信息（槽位）是否齐全。缺失时主动追问，补齐后再进入检索和生成，提升回答的针对性和安全性。
+
+#### 追问触发条件
+
+```
+用户提问 → stream_chat()
+  → LightAgent.plan() 判断 answer_style != "chat"（非闲聊场景）
+    → followup_service.process_turn() 执行槽位检测
+      → 有缺失槽位 → 触发追问，直接返回追问消息（不走 RAG）
+      → 槽位齐全 → 继续走正常 RAG 流水线
+```
+
+#### 追问领域（Domain）与槽位
+
+| 领域 | 触发关键词 | 必填槽位 |
+|------|-----------|---------|
+| 问诊 (`symptom`) | 症状描述、intent=symptom_diagnosis | 主症状、持续时间、严重程度、其他状态、伴随表现 |
+| 食疗 (`dietary`) | 食疗/代茶饮/煲汤 | 想调理的问题、持续时间、整体状态、伴随表现、禁忌用药 |
+| 凉茶 (`cooling_tea`) | 凉茶/清热/降火/祛湿茶 | 想解决的问题、整体状态、偏热/偏湿表现、持续时间、禁忌情况 |
+
+#### 追问消息格式
+
+```
+为了把症状判断得更准，我还差几项问诊信息。
+已收到：主症状：失眠、持续时间：近一周
+先补这一项：这个情况大概持续多久了？
+待补信息：持续时间、严重程度、其他状态
+你也可以一次性把剩余信息都发来，我补齐后继续回答。
+```
+
+#### 槽位提取
+
+- 支持从用户自然语言中通过正则模式和关键词匹配提取槽位值
+- 支持从角色档案（case_profile_summary）中自动填充已知信息
+- `body_statuses` 槽位需包含 ≥3 项细节（睡眠/胃口/二便/寒热）才算满足
+
+#### 舌象集成
+
+- 当 `body_statuses` 或 `accompanying_symptoms` 待补时，追问消息中追加舌象上传提示
+- 舌象解析结果写入 `followup_state["tongue_analysis"]`，参与槽位满足判断
+- 最终结论拼入 `clarification_context`，注入 RAG prompt
+
+---
+
 ## API 接口总览
 
 所有接口均以 `/api/v1` 为前缀。
@@ -635,6 +706,64 @@ tcm-rag-platform/
 | POST | `/graph/entities` | 创建/更新实体 | admin |
 | POST | `/graph/relationships` | 创建关系 | admin |
 
+### 8. 舌象分析（多模态）
+
+**相关文件**：`backend/app/services/tongue_analysis_service.py`、`backend/app/api/v1/tongue.py`
+
+#### 功能概述
+
+用户在追问流程中上传舌象照片，系统通过多模态大模型（qwen-vl-max）自动解析舌色、舌苔、舌形等中医舌诊要素，输出结构化结论并注入 RAG 流水线，作为个性化辨证依据。
+
+#### 数据流
+
+```
+追问服务检测到 body_statuses 缺失
+  → 追问消息中提示"可上传舌象照片辅助判断"
+    → 用户上传舌象图片 → POST /api/v1/tongue/analyze
+      → 图片上传至 MinIO 获取 URL
+        → 调用 qwen-vl-max 解析舌象
+          → 返回结构化结果（舌色/舌苔/舌形/体质倾向）
+            → 写入 followup_state.tongue_analysis
+              → 追问继续或槽位补齐 → 注入 prompt → RAG 流水线
+```
+
+#### 解析输出格式
+
+```json
+{
+  "tongue_color": "舌红",
+  "coating": "苔黄腻",
+  "tongue_shape": "舌体胖大，边有齿痕",
+  "constitution_hint": "湿热体质倾向",
+  "raw_description": "舌红苔黄腻，舌体胖大边有齿痕，湿热体质倾向"
+}
+```
+
+#### 追问集成
+
+- 当追问服务检测到 `body_statuses` 或 `accompanying_symptoms` 槽位缺失时，在追问消息中追加舌象上传提示
+- 用户上传后，舌象结果写入 `followup_state["tongue_analysis"]`，参与槽位满足判断
+- 最终舌象结论拼入 `clarification_context`，通过 `_merge_case_profile_summary` 注入答案生成的 prompt
+
+#### 降级策略
+
+- 多模态模型不可用时，降级为前端手动选择舌象（舌色、舌苔、舌形下拉选择）
+- 手动填写的结果同样写入 `followup_state.tongue_analysis`，下游处理逻辑一致
+
+#### 前端集成
+
+- 复用 `UploadImagePanel.tsx` 组件，在追问消息中显示上传入口
+- 支持图片预览和重新上传
+
+---
+
+### 舌象分析模块 (`/tongue`)
+
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| POST | `/tongue/analyze` | 上传舌象图片并解析 | 需登录 |
+| GET | `/tongue/history` | 历史舌象记录 | 需登录 |
+
 ### 健康检查
 
 | 方法 | 路径 | 说明 | 认证 |
@@ -657,6 +786,8 @@ User ──1:N──> ChatSession ──1:N──> Message
  └──1:N──> Document ──1:N──> Chunk
                 │
                 └──refs──> EvalTask (triggered_by)
+
+User ──1:N──> TongueRecord (舌象记录)
 
 独立日志表:
   AnswerLog (trace_id, message_id)
@@ -811,6 +942,21 @@ UserRole 为多对多关联表：`user_id` + `role_id` 联合主键。
 | `output_chunks` | JSON | 重排后 |
 | `rerank_scores` | JSON | 分数明细 |
 
+#### TongueRecord (`tongue_records`)
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | Integer (PK) | 自增主键 |
+| `user_id` | Integer (FK) | 所属用户 |
+| `image_url` | String(512) | 舌象图片 URL（MinIO） |
+| `tongue_color` | String(64) | 舌色（如"舌红"、"淡白"） |
+| `coating` | String(64) | 舌苔（如"苔黄腻"、"薄白"） |
+| `tongue_shape` | String(128) | 舌形（如"胖大齿痕"、"瘦薄"） |
+| `constitution_hint` | String(128) | 体质倾向（如"湿热"、"气虚"） |
+| `raw_description` | Text | 原始描述文本 |
+| `source` | Enum(auto/manual) | 来源：自动解析/手动填写 |
+| `created_at` | DateTime | 记录时间 |
+
 ---
 
 ## 配置管理
@@ -849,6 +995,7 @@ class Settings(BaseSettings):
 | `GRAPH_RECALL_ENABLED` | `true` | 关闭后跳过图谱检索通道 |
 | `RERANKER_ENABLED` | `true` | 关闭后跳过重排步骤 |
 | `ENABLE_DEMO_DATA` | `true` | 关闭后不自动灌入演示数据 |
+| `TONGUE_ANALYSIS_ENABLED` | `true` | 关闭后追问中不提示舌象上传 |
 
 ---
 

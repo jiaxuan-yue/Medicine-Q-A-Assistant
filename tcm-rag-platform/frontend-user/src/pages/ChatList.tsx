@@ -1,6 +1,11 @@
 import React, { useEffect } from 'react';
 import { List, Button, Typography, Layout, Empty } from 'antd';
-import { PlusOutlined, LogoutOutlined, ArrowRightOutlined, ProfileOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  LogoutOutlined,
+  ArrowRightOutlined,
+  ProfileOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
@@ -35,7 +40,7 @@ const ChatList: React.FC = () => {
         <div className="chatlist-brand">
           <div className="chatlist-brand-mark">岐</div>
           <div className="chatlist-brand-copy">
-            <strong>中医知识问答工作台</strong>
+            <strong>四季有方，三餐有养</strong>
           </div>
         </div>
         <Button
@@ -49,12 +54,13 @@ const ChatList: React.FC = () => {
       <Content className="chatlist-content">
         <section className="chatlist-hero">
           <div className="chatlist-hero-copy">
-            <div className="section-badge">Knowledge Retrieval Workspace</div>
             <Title className="display-title" level={1}>
-              把问题问得更准，把出处看得更清。
+              把问题问得更准
+              <br />
+              把出处看得更清
             </Title>
             <p>
-              面向中医知识问答场景的工作台，适合围绕症状、证候、方剂、古籍出处做结构化追问。流式回答、引用片段和反馈动作都在同一视图里完成。
+              想来一碗凉茶or汤？先问问你的体质，最近天气，流传的医书
             </p>
             <div className="chatlist-hero-stats">
               <div className="chatlist-stat">
@@ -67,11 +73,11 @@ const ChatList: React.FC = () => {
               </div>
               <div className="chatlist-stat">
                 <span>知识重点</span>
-                <strong>出处与辨证</strong>
+                <strong>膳有古方</strong>
               </div>
               <div className="chatlist-stat">
                 <span>望闻问切</span>
-                <strong>舌苔与面像</strong>
+                <strong>舌苔与追问</strong>
               </div>
             </div>
             <div className="chatlist-profile-summary">
@@ -88,24 +94,30 @@ const ChatList: React.FC = () => {
             <div className="chatlist-cta-card">
               <h2>开始新的问答</h2>
               <p>适合直接输入症状、方剂名、古籍出处，或把上一轮问题继续追问下去。</p>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                size="large"
-                onClick={handleNewChat}
-              >
-                新建对话
-              </Button>
+              <div className="chatlist-cta-actions">
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  size="large"
+                  onClick={handleNewChat}
+                >
+                  新建对话
+                </Button>
+              </div>
             </div>
             <div className="chatlist-note-list">
-              <div className="chatlist-note">
-                <strong>提问建议</strong>
-                <span>尽量写清症状组合、病程、诱因和你最关心的知识点。</span>
-              </div>
-              <div className="chatlist-note">
-                <strong>回答风格</strong>
-                <span>优先返回相关证候和引用来源，而不是直接替代线下面诊。</span>
-              </div>
+              <button
+                type="button"
+                className="chatlist-library-entry"
+                onClick={() => navigate('/bookshelf')}
+              >
+                <span>藏书楼入口</span>
+                <strong>700+ 册中医古籍一屏总览</strong>
+                <p>从《神农本草经》到近现代医案，按类别浏览，点书名即可复制。</p>
+                <em>
+                  打开书架 <ArrowRightOutlined />
+                </em>
+              </button>
             </div>
           </div>
         </section>
