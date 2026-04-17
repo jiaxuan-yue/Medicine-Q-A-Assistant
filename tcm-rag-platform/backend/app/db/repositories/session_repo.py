@@ -24,6 +24,7 @@ class SessionRepository:
         case_profile_id: int | None = None,
         case_profile_name: str | None = None,
         case_profile_summary: str | None = None,
+        consultation_context: dict[str, Any] | None = None,
     ) -> ChatSession:
         session = ChatSession(
             user_id=user_id,
@@ -31,6 +32,7 @@ class SessionRepository:
             case_profile_id=case_profile_id,
             case_profile_name=case_profile_name,
             case_profile_summary=case_profile_summary,
+            consultation_context=consultation_context or {},
             followup_state={},
         )
         db.add(session)
@@ -144,6 +146,7 @@ class SessionRepository:
         case_profile_id: int | None | object = _UNSET,
         case_profile_name: str | None | object = _UNSET,
         case_profile_summary: str | None | object = _UNSET,
+        consultation_context: dict[str, Any] | None | object = _UNSET,
         followup_state: dict[str, Any] | None | object = _UNSET,
     ) -> ChatSession:
         if title is not _UNSET:
@@ -156,6 +159,8 @@ class SessionRepository:
             session.case_profile_name = case_profile_name
         if case_profile_summary is not _UNSET:
             session.case_profile_summary = case_profile_summary
+        if consultation_context is not _UNSET:
+            session.consultation_context = consultation_context
         if followup_state is not _UNSET:
             session.followup_state = followup_state
         session.updated_at = datetime.utcnow()

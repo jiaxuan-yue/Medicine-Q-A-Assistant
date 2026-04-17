@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import os
 import sys
 from pathlib import Path
@@ -35,12 +37,25 @@ def _extract_tool_payload(result: Any) -> dict[str, Any]:
     return {}
 
 
+def _has_environment_mcp_server() -> bool:
+    try:
+        return importlib.util.find_spec("mcp.server.fastmcp") is not None
+    except ModuleNotFoundError:
+        return False
+
+
 async def flash_call_environment_mcp(preferred_location: dict[str, Any] | None = None) -> dict[str, Any]:
     """Spawn the MCP server over stdio, call get_live_context, then exit."""
     if not settings.LIVE_CONTEXT_ENABLED:
         return {}
 
-    if not settings.MCP_ENVIRONMENT_ENABLED or not ClientSession or not StdioServerParameters or not stdio_client:
+    if (
+        not settings.MCP_ENVIRONMENT_ENABLED
+        or not ClientSession
+        or not StdioServerParameters
+        or not stdio_client
+        or not _has_environment_mcp_server()
+    ):
         logger.info("environment MCP disabled or unavailable, using direct live context fallback")
         return await get_live_context_async(preferred_location)
 
@@ -58,14 +73,15 @@ async def flash_call_environment_mcp(preferred_location: dict[str, Any] | None =
     )
 
     try:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                arguments = {"preferred_location": preferred_location} if preferred_location else {}
-                result = await session.call_tool("get_live_context", arguments=arguments)
-                payload = _extract_tool_payload(result)
-                if isinstance(payload, dict) and payload:
-                    return payload
+        async with asyncio.timeout(settings.LIVE_CONTEXT_TIMEOUT_SECONDS):
+            async with stdio_client(server_params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    arguments = {"preferred_location": preferred_location} if preferred_location else {}
+                    result = await session.call_tool("get_live_context", arguments=arguments)
+                    payload = _extract_tool_payload(result)
+                    if isinstance(payload, dict) and payload:
+                        return payload
     except Exception as exc:
         logger.warning("environment MCP flash call failed, fallback to direct context: %s", exc)
 

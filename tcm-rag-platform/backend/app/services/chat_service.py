@@ -22,7 +22,12 @@ from app.services.case_profile_service import (
 )
 from app.services.dietary_generation_context_service import dietary_generation_context_service
 from app.services.environment_mcp_client_service import flash_call_environment_mcp
-from app.services.followup_service import followup_service
+from app.services.followup_service import (
+    build_consultation_context_summary,
+    followup_service,
+    merge_consultation_context,
+)
+from app.services.followup_question_service import followup_question_service
 from app.services.light_agent_service import light_agent_service
 from app.services.prompt_service import prompt_service
 from app.services.query_rewrite_service import rewrite_query, rewrite_query_async
@@ -84,6 +89,33 @@ def _merge_case_profile_summary(
     return f"本轮补充：{clarification_context}"
 
 
+def _compose_case_profile_context(
+    base_case_profile_summary: str | None,
+    consultation_context: dict[str, Any] | None = None,
+    clarification_context: str | None = None,
+) -> str | None:
+    parts: list[str] = []
+    base_summary = (base_case_profile_summary or "").strip()
+    session_summary = build_consultation_context_summary(consultation_context)
+    if base_summary:
+        parts.append(base_summary)
+    if session_summary:
+        parts.append(f"会话已知：{session_summary}")
+    if clarification_context:
+        parts.append(f"本轮补充：{clarification_context}")
+    return "；".join(part for part in parts if part) or None
+
+
+def _render_followup_card(question: str, *, current_round: int, max_rounds: int) -> str:
+    return "\n".join(
+        [
+            f"第 {current_round} 问 / 共 {max_rounds} 问",
+            question.strip(),
+            "直接回复这一项就可以，我收到后继续。",
+        ]
+    )
+
+
 async def _build_conversation_history(
     db: AsyncSession,
     *,
@@ -123,6 +155,7 @@ async def stream_chat(
         return
 
     stored_case_profile_summary = case_profile_summary or session.case_profile_summary
+    stored_consultation_context = session.consultation_context or {}
 
     try:
         effective_query = query
@@ -137,6 +170,11 @@ async def stream_chat(
                 intent=preview_bundle.intent,
                 answer_style=preview_plan.answer_style,
                 case_profile_summary=stored_case_profile_summary,
+                known_context=stored_consultation_context,
+            )
+            updated_consultation_context = merge_consultation_context(
+                stored_consultation_context,
+                followup_decision.collected_slots,
             )
             logger.info(
                 "followup_gate: need_follow_up=%s, preview_style=%s, preview_intent=%s, effective_query=%s, clarification=%s",
@@ -156,8 +194,23 @@ async def stream_chat(
                     kind="user",
                     rewritten_query=query,
                 )
+                # Release SQLite write lock before keeping the SSE response open.
+                await db.commit()
                 yield _format_sse("start", {"session_id": session_id, "message_id": ""})
-                full_followup = followup_decision.follow_up_message
+                fallback_lines = (followup_decision.follow_up_message or "").splitlines()
+                fallback_question = fallback_lines[1].strip() if len(fallback_lines) >= 2 else "请继续补充这一项。"
+                followup_question = await followup_question_service.generate_question(
+                    domain=followup_decision.domain or "symptom",
+                    target=followup_decision.question_target or (session.followup_state or {}).get("last_asked_target") or "primary_symptom",
+                    collected_slots=followup_decision.collected_slots,
+                    latest_query=query,
+                    asked_targets=list((session.followup_state or {}).get("asked_targets", [])),
+                )
+                full_followup = _render_followup_card(
+                    followup_question or fallback_question,
+                    current_round=followup_decision.round_count or int((session.followup_state or {}).get("round_count", 1)),
+                    max_rounds=3,
+                )
                 for piece in split_answer_for_stream(full_followup, chunk_size=32):
                     yield _format_sse("chunk", {"content": piece})
                 assistant_message = await session_repo.add_message(
@@ -173,8 +226,10 @@ async def stream_chat(
                     db,
                     session=session,
                     case_profile_summary=stored_case_profile_summary,
+                    consultation_context=updated_consultation_context,
                     followup_state=session.followup_state or {},
                 )
+                await db.commit()
                 yield _format_sse("citation", {"citations": []})
                 yield _format_sse(
                     "done",
@@ -189,6 +244,7 @@ async def stream_chat(
 
             effective_query = followup_decision.effective_query or query
             clarification_context = followup_decision.clarification_context
+            stored_consultation_context = updated_consultation_context
 
         tool_plan = light_agent_service.plan(effective_query, history_summary=session.summary)
         logger.info(
@@ -203,8 +259,9 @@ async def stream_chat(
         )
 
         if tool_plan.answer_style in {"chat", "consult"}:
-            effective_case_profile_summary = _merge_case_profile_summary(
+            effective_case_profile_summary = _compose_case_profile_context(
                 stored_case_profile_summary,
+                stored_consultation_context,
                 clarification_context,
             )
             consult_generation_context: dict[str, str] = {}
@@ -240,6 +297,8 @@ async def stream_chat(
                 kind="user",
                 rewritten_query=query,
             )
+            # Persist the user message before the potentially long LLM stream starts.
+            await db.commit()
 
             yield _format_sse("start", {"session_id": session_id, "message_id": ""})
 
@@ -278,8 +337,10 @@ async def stream_chat(
                     else f"最近问题聚焦：{effective_query[:36]}"
                 ),
                 case_profile_summary=stored_case_profile_summary,
+                consultation_context=stored_consultation_context,
                 followup_state={},
             )
+            await db.commit()
             yield _format_sse("citation", {"citations": []})
             yield _format_sse(
                 "done",
@@ -349,8 +410,9 @@ async def stream_chat(
             live_context.get("environmental_context", "时间：未知 | 位置：未提供 | 天气：未获取"),
         )
 
-        effective_case_profile_summary = _merge_case_profile_summary(
+        effective_case_profile_summary = _compose_case_profile_context(
             stored_case_profile_summary,
+            stored_consultation_context,
             clarification_context,
         )
         generation_context = dietary_generation_context_service.build_context(
@@ -398,6 +460,9 @@ async def stream_chat(
                 else query
             ),
         )
+        # Persist the user turn before any long-running generation work to avoid holding
+        # a SQLite write transaction for the full SSE lifetime.
+        await db.commit()
 
         yield _format_sse("start", {"session_id": session_id, "message_id": ""})
 
@@ -443,8 +508,10 @@ async def stream_chat(
             session=session,
             summary=f"最近问题聚焦：{query_bundle.normalized_query[:36]}",
             case_profile_summary=stored_case_profile_summary,
+            consultation_context=stored_consultation_context,
             followup_state={},
         )
+        await db.commit()
 
         yield _format_sse("citation", {"citations": citation_dicts})
         yield _format_sse(
@@ -489,6 +556,7 @@ class ChatService:
             case_profile_id=profile.id,
             case_profile_name=profile.profile_name,
             case_profile_summary=build_case_profile_summary(profile),
+            consultation_context={},
         )
         return _serialize_session(session).model_dump()
 
@@ -559,6 +627,9 @@ class ChatService:
             case_profile_name=case_profile.profile_name,
             case_profile_summary=current_profile_summary,
         )
+        # The /stream endpoint returns a StreamingResponse, so committing here prevents
+        # the request-scoped transaction from holding a write lock for the whole stream.
+        await db.commit()
 
         return {
             "user_id": user_id,

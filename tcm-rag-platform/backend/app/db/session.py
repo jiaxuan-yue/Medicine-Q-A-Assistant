@@ -139,6 +139,7 @@ def _ensure_chat_persistence_columns(sync_conn) -> None:
             "case_profile_id": "case_profile_id INTEGER NULL",
             "case_profile_name": "case_profile_name VARCHAR(128) NULL",
             "case_profile_summary": "case_profile_summary TEXT NULL",
+            "consultation_context": "consultation_context JSON NULL",
             "followup_state": "followup_state JSON NULL",
         },
     )

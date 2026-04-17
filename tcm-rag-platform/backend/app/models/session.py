@@ -24,6 +24,7 @@ class ChatSession(Base):
     case_profile_id = Column(Integer, nullable=True)
     case_profile_name = Column(String(128), nullable=True)
     case_profile_summary = Column(Text, nullable=True)
+    consultation_context = Column(JSON, nullable=True)
     followup_state = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
