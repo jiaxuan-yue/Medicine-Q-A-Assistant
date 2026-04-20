@@ -51,15 +51,16 @@ class RetrievalService:
         fusion_k = top_k or settings.FUSION_TOP_K
         queries = rewrite_result.rewrite_queries or [rewrite_result.normalized_query]
         entities = rewrite_result.entities or []
+        book_name = rewrite_result.book_name
 
         # Run retrieval channels in parallel
         tasks: dict[str, asyncio.Task] = {}
         async with asyncio.TaskGroup() as tg:
             tasks["sparse"] = tg.create_task(
-                self._sparse_retrieve(queries, settings.SPARSE_TOP_K)
+                self._sparse_retrieve(queries, settings.SPARSE_TOP_K, doc_title=book_name)
             )
             tasks["dense"] = tg.create_task(
-                self._dense_retrieve(rewrite_result.normalized_query, settings.DENSE_TOP_K)
+                self._dense_retrieve(rewrite_result.normalized_query, settings.DENSE_TOP_K, doc_title=book_name)
             )
             if settings.GRAPH_RECALL_ENABLED and entities:
                 tasks["graph"] = tg.create_task(
@@ -94,15 +95,15 @@ class RetrievalService:
 
     # ── sparse (ES BM25) ───────────────────────────────────
 
-    async def _sparse_retrieve(self, queries: list[str], top_k: int) -> list[dict]:
-        """Elasticsearch BM25 search across rewritten queries."""
+    async def _sparse_retrieve(self, queries: list[str], top_k: int, doc_title: str | None = None) -> list[dict]:
+        """Elasticsearch BM25 search across rewritten queries with optional book filter."""
         if not self._es.available:
             return []
         try:
             all_hits: list[dict] = []
             for q in queries:
                 for variant in expand_script_variants(q):
-                    hits = await self._es.search_bm25(TCM_CHUNKS_INDEX, variant, top_k=top_k)
+                    hits = await self._es.search_bm25(TCM_CHUNKS_INDEX, variant, top_k=top_k, doc_title=doc_title)
                     for h in hits:
                         h["source_type"] = "sparse"
                     all_hits.extend(hits)
@@ -114,8 +115,8 @@ class RetrievalService:
 
     # ── dense (FAISS) ───────────────────────────────────────
 
-    async def _dense_retrieve(self, query: str, top_k: int) -> list[dict]:
-        """FAISS vector search using embedding."""
+    async def _dense_retrieve(self, query: str, top_k: int, doc_title: str | None = None) -> list[dict]:
+        """FAISS vector search with optional book post-filter."""
         if not self._vs.available:
             return []
         try:
@@ -126,6 +127,15 @@ class RetrievalService:
                 for h in hits:
                     h["source_type"] = "dense"
                 all_hits.extend(hits)
+
+            if doc_title:
+                matched = [h for h in all_hits if h.get("doc_title") == doc_title]
+                all_hits = matched
+                if matched:
+                    logger.info("dense retrieval filtered by book %s: %d/%d hits matched", doc_title, len(matched), len(all_hits))
+                else:
+                    logger.info("dense retrieval book filter %s: 0 hits, returning empty", doc_title)
+
             return _deduplicate(all_hits, top_k)
         except Exception as exc:
             logger.warning("稠密检索失败，降级跳过: %s", exc)

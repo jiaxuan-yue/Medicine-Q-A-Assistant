@@ -149,21 +149,33 @@ class ESClient:
     # ── search ──────────────────────────────────────────────
 
     async def search_bm25(
-        self, index_name: str, query: str, top_k: int = 20
+        self, index_name: str, query: str, top_k: int = 20, doc_title: str | None = None
     ) -> list[dict]:
-        """BM25 search, return list of {doc_id, chunk_id, chunk_text, score, metadata}."""
+        """BM25 search with optional doc_title filter, return list of {doc_id, chunk_id, chunk_text, score, metadata}."""
         if not self.available:
             return []
         try:
+            match_query = {
+                "multi_match": {
+                    "query": query,
+                    "fields": ["normalized_text^4", "chunk_text^2", "doc_title"],
+                    "type": "best_fields",
+                }
+            }
+
+            if doc_title:
+                es_query = {
+                    "bool": {
+                        "must": [match_query],
+                        "filter": [{"term": {"doc_title": doc_title}}],
+                    }
+                }
+            else:
+                es_query = match_query
+
             resp = await self._client.search(  # type: ignore[union-attr]
                 index=index_name,
-                query={
-                    "multi_match": {
-                        "query": query,
-                        "fields": ["normalized_text^4", "chunk_text^2", "doc_title"],
-                        "type": "best_fields",
-                    }
-                },
+                query=es_query,
                 size=top_k,
                 _source=True,
             )
@@ -181,6 +193,10 @@ class ESClient:
                         "metadata": source.get("metadata", {}),
                     }
                 )
+            # If book filter yielded zero results, retry without filter
+            if not results and doc_title:
+                logger.debug("Book filter %r returned 0 hits, retrying without filter for query: %s", doc_title, query[:40])
+                return await self.search_bm25(index_name, query, top_k, doc_title=None)
             return results
         except Exception as exc:
             logger.error("BM25 搜索失败: %s", exc)
