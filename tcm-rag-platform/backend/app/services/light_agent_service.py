@@ -178,11 +178,12 @@ class LightAgentService:
             return False
         if any(marker in normalized for marker in _DIRECT_KNOWLEDGE_MARKERS):
             return False
+        if any(marker in normalized for marker in _MEDICAL_HINT_MARKERS):
+            return False
         if LightAgentService.requires_search(normalized):
             return False
         has_consult_marker = any(marker in normalized for marker in _SIMPLE_CONSULT_MARKERS)
-        has_medical_hint = any(marker in normalized for marker in _MEDICAL_HINT_MARKERS)
-        return has_medical_hint or has_consult_marker
+        return has_consult_marker
 
     def plan(self, query: str, history_summary: str | None = None) -> ToolPlan:
         query = (query or "").strip()

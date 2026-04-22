@@ -14,6 +14,7 @@ from app.models.role import Role, UserRole
 from app.models.session import ChatSession
 from app.models.user import User
 from app.models.user_case_profile import UserCaseProfile
+from app.models.user_portrait_memory import UserPortraitMemory
 
 __all__ = [
     "AnswerLog",
@@ -30,5 +31,6 @@ __all__ = [
     "Role",
     "User",
     "UserCaseProfile",
+    "UserPortraitMemory",
     "UserRole",
 ]

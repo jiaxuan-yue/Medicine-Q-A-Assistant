@@ -66,8 +66,6 @@ def build_case_profile_summary(profile: UserCaseProfile | None) -> str:
     parts.append("正在用药" if profile.currently_taking_medicine else "当前未用药")
     if profile.sleep_status:
         parts.append(f"睡眠：{profile.sleep_status}")
-    if profile.tongue_description:
-        parts.append(f"舌象描述：{profile.tongue_description}")
     return "；".join(parts)
 
 

@@ -11,6 +11,7 @@ class QueryRewriteResult(BaseModel):
     rewrite_queries: list[str]
     entities: list[str]
     intent: str
+    book_name: str | None = None  # 查询中指定的书名，用于检索过滤
 
 
 class RetrievalHit(BaseModel):

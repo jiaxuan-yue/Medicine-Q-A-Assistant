@@ -34,6 +34,14 @@ _UNINFORMATIVE_REPLY_PATTERNS = (
     re.compile(r"^(不太清楚|不清楚|不知道|不确定|记不清|说不好|不好说|还是说不好|还是不清楚)$"),
     re.compile(r"^(暂时|目前)?(补不了|说不出|答不上来)(更多|了)?$"),
 )
+_RECOVERY_RESOLVED_PATTERNS = (
+    re.compile(r"(已经好了|已经恢复|恢复了|好多了|痊愈了|没事了|不咳了|退烧了)"),
+    re.compile(r"(完全恢复|基本恢复|差不多好了)"),
+)
+_RECOVERY_UNRESOLVED_PATTERNS = (
+    re.compile(r"(还没好|没好|未恢复|还有|仍然|还是|反复)"),
+    re.compile(r"(还有点|还有一些|还是有点)"),
+)
 _LOW_CONFIDENCE_DURATION_MARKERS = {"最近", "这几天", "这几周", "这几个月", "今天", "昨天", "前天"}
 
 _DURATION_PATTERNS = [
@@ -111,6 +119,7 @@ _HEAT_COLD_STATUS_MARKERS = ("怕冷", "怕热", "口干", "口苦", "手脚凉"
 
 _BODY_STATUS_DIMENSIONS = ("sleep", "appetite", "bowel", "temperature")
 _MAX_FOLLOWUP_ROUNDS = 3
+_MAX_QUESTIONS_PER_BATCH = 3
 _EPISODE_SLOTS = ("primary_symptom", "duration", "severity", "accompanying_symptoms")
 _GENERAL_CONTEXT_SLOTS = ("body_statuses", "contraindications")
 _BODY_STATUS_TARGETS = tuple(f"body_status.{dimension}" for dimension in _BODY_STATUS_DIMENSIONS)
@@ -127,18 +136,21 @@ _SLOT_LABELS = {
     "accompanying_symptoms": "伴随表现",
     "body_statuses": "其他状态",
     "contraindications": "禁忌和用药情况",
+    "recovery_status": "恢复情况",
 }
 
 _DOMAIN_SLOTS = {
     "symptom": ["primary_symptom", "duration", "severity", "body_statuses", "accompanying_symptoms"],
     "dietary": ["primary_symptom", "duration", "body_statuses", "accompanying_symptoms", "contraindications"],
     "cooling_tea": ["primary_symptom", "body_statuses", "accompanying_symptoms", "duration", "contraindications"],
+    "tonify_guardrail": ["recovery_status"],
 }
 
 _DOMAIN_INTROS = {
     "symptom": "为了把症状判断得更准，我还差几项问诊信息。",
     "dietary": "为了把食疗建议收得更稳，我还差几项调理信息。",
     "cooling_tea": "为了避免凉茶推荐过凉、过猛，我还差几项关键信息。",
+    "tonify_guardrail": "在给进补建议前，我想先确认上次急性不适是否已经恢复。",
 }
 
 _DOMAIN_SLOT_LABELS = {
@@ -163,6 +175,9 @@ _DOMAIN_SLOT_LABELS = {
         "duration": "持续时间",
         "contraindications": "凉茶禁忌情况",
     },
+    "tonify_guardrail": {
+        "recovery_status": "恢复情况",
+    },
 }
 
 _DOMAIN_SLOT_QUESTIONS = {
@@ -183,9 +198,12 @@ _DOMAIN_SLOT_QUESTIONS = {
     "cooling_tea": {
         "primary_symptom": "你这次想用凉茶主要处理什么，是上火、咽痛、口苦、长痘，还是湿热困重？",
         "body_statuses": "再补一下整体状态：最近睡眠、胃口、二便，以及怕冷还是怕热，大概是什么情况？",
-        "accompanying_symptoms": "再补一下偏热或偏湿的表现，比如口苦口干、咽痛、尿黄、长痘、困重、舌苔厚腻等？",
+        "accompanying_symptoms": "再补一下偏热或偏湿的表现，比如口苦口干、咽痛、尿黄、长痘、困重等？",
         "duration": "这些表现大概持续多久了，是这两天突然加重，还是已经反复一段时间？",
         "contraindications": "有没有怕冷、腹泻、经期、怀孕/备孕/哺乳、慢病或正在用药？凉茶这一步要先避开禁忌。",
+    },
+    "tonify_guardrail": {
+        "recovery_status": "上次那次不适现在已经完全恢复了吗？如果还有发热、咽痛、怕冷或咳嗽，先别急着进补。",
     },
 }
 
@@ -198,7 +216,7 @@ class FollowUpDecision:
     clarification_context: str | None = None
     message_kind: str = "answer"
     collected_slots: dict[str, str] | None = None
-    question_target: str | None = None
+    question_targets: list[str] | None = None
     round_count: int = 0
     domain: str | None = None
 
@@ -423,6 +441,19 @@ def _extract_accompanying_symptoms(text: str) -> str | None:
     return None
 
 
+def _extract_recovery_status(text: str) -> str | None:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return None
+    if any(pattern.search(normalized) for pattern in _RECOVERY_RESOLVED_PATTERNS) and not any(
+        pattern.search(normalized) for pattern in _RECOVERY_UNRESOLVED_PATTERNS
+    ):
+        return "已恢复"
+    if any(pattern.search(normalized) for pattern in _RECOVERY_UNRESOLVED_PATTERNS):
+        return normalized[:48]
+    return None
+
+
 def _extract_primary_symptom(text: str, *, allow_fallback: bool = True) -> str | None:
     hints = [item for item in _SYMPTOM_HINTS if item in text]
     if hints:
@@ -453,6 +484,12 @@ def _extract_slots(
     focused_slot: str | None = None,
 ) -> dict[str, str]:
     extracted: dict[str, str] = {}
+    if domain == "tonify_guardrail":
+        recovery_status = _extract_recovery_status(text)
+        if recovery_status:
+            extracted["recovery_status"] = recovery_status
+        return extracted
+
     if allow_primary_fallback or focused_slot == "primary_symptom":
         primary = _extract_primary_symptom(
             text,
@@ -485,6 +522,11 @@ def _extract_slots(
         contraindications = _extract_contraindications(text, case_profile_summary)
         if contraindications:
             extracted["contraindications"] = contraindications
+
+    if focused_slot == "recovery_status":
+        recovery_status = _extract_recovery_status(text)
+        if recovery_status:
+            extracted["recovery_status"] = recovery_status
 
     return extracted
 
@@ -541,7 +583,9 @@ def _resolve_domain(query: str, intent: str | None, answer_style: str | None) ->
         return "cooling_tea"
     if answer_style == "dietary" or any(marker in query for marker in _DIETARY_MARKERS):
         return "dietary"
-    if intent in {"symptom_diagnosis", "general_consultation"}:
+    if _looks_like_treatment_request(query):
+        return "symptom"
+    if intent == "symptom_diagnosis":
         return "symptom"
     return None
 
@@ -766,8 +810,9 @@ class FollowUpService:
                 for target in (raw_state.get("asked_targets") or raw_state.get("asked_slots") or [])
                 if isinstance(target, str) and target
             ]
-            next_target = next((target for target in pending_targets if target not in asked_targets), None)
-            if not next_target:
+            unasked_targets = [target for target in pending_targets if target not in asked_targets]
+            batch_targets = unasked_targets[:_MAX_QUESTIONS_PER_BATCH]
+            if not batch_targets:
                 session.followup_state = {}
                 return FollowUpDecision(
                     need_follow_up=False,
@@ -800,17 +845,21 @@ class FollowUpService:
 
             current_round = round_count + 1
             raw_state["round_count"] = current_round
-            raw_state["asked_targets"] = [*asked_targets, next_target]
-            raw_state["last_asked_target"] = next_target
+            raw_state["asked_targets"] = [*asked_targets, *batch_targets]
+            raw_state["last_asked_target"] = batch_targets[-1]
             session.followup_state = raw_state
+            questions_text = "\n".join(
+                f"{i + 1}. {_default_question_for_target(raw_state.get('domain') or 'symptom', target)}"
+                for i, target in enumerate(batch_targets)
+            )
+            followup_intro = _DOMAIN_INTROS.get(raw_state.get("domain") or "symptom", "")
+            if followup_intro:
+                lines = [followup_intro, questions_text, "按编号逐条回复即可，我收到后继续。"]
+            else:
+                lines = [questions_text, "按编号逐条回复即可，我收到后继续。"]
             return FollowUpDecision(
                 need_follow_up=True,
-                follow_up_message=_build_follow_up_message(
-                    domain=raw_state.get("domain") or "symptom",
-                    target=next_target,
-                    current_round=current_round,
-                    max_rounds=_MAX_FOLLOWUP_ROUNDS,
-                ),
+                follow_up_message="\n".join(lines),
                 effective_query=raw_state.get("latest_query") or raw_state.get("original_query") or query,
                 clarification_context=_build_clarification_context(
                     collected,
@@ -818,7 +867,7 @@ class FollowUpService:
                 ),
                 message_kind="followup",
                 collected_slots=_copy_slot_map(collected),
-                question_target=next_target,
+                question_targets=batch_targets,
                 round_count=current_round,
                 domain=raw_state.get("domain"),
             )

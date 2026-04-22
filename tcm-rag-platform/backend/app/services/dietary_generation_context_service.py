@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from app.services.live_context_service import get_current_solar_term
+from app.services.portrait_memory_service import portrait_memory_service
 
 _EXPLICIT_CONSTITUTIONS = (
     "平和",
@@ -36,7 +37,15 @@ _LOCATION_PATTERNS = [
 
 def _normalize_text(value: str | None) -> str:
     return (value or "").strip()
-def infer_user_constitution(case_profile_summary: str | None, user_query: str = "") -> str:
+def infer_user_constitution(
+    case_profile_summary: str | None,
+    user_query: str = "",
+    long_term_profile: dict | None = None,
+) -> str:
+    structured_constitution = portrait_memory_service.infer_constitution_label(long_term_profile)
+    if structured_constitution:
+        return structured_constitution
+
     combined = f"{_normalize_text(case_profile_summary)} {_normalize_text(user_query)}"
     explicit = re.search(r"(平和|气虚|阳虚|阴虚|痰湿|湿热|血瘀|气郁|特禀)体质", combined)
     if explicit:
@@ -100,6 +109,7 @@ class DietaryGenerationContextService:
         *,
         user_query: str,
         case_profile_summary: str | None,
+        long_term_profile: dict | None,
         retrieved_chunks: list[dict],
         weather_mcp_data: dict | None = None,
         live_context: dict | None = None,
@@ -125,7 +135,12 @@ class DietaryGenerationContextService:
             "current_solar_term": live_context.get("solar_term") or get_current_solar_term(),
             "environmental_context": live_context.get("environmental_context")
             or f"时间：未知 | 位置：{location_hint or '未提供'} | 天气：未获取",
-            "user_constitution": infer_user_constitution(case_profile_summary, user_query),
+            "user_constitution": infer_user_constitution(
+                case_profile_summary,
+                user_query,
+                long_term_profile=long_term_profile,
+            ),
+            "long_term_profile": long_term_profile or {},
             "retrieved_ancient_chunks": [
                 _serialize_retrieved_chunk(chunk)
                 for chunk in retrieved_chunks[:6]

@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("httpx", reason="Install test extras with `pip install -e .[test]` to run API tests.")
+
 from fastapi.testclient import TestClient
 
 from app.main import app

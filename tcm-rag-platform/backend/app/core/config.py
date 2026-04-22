@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     BASE_DIR: str = str(_BASE_DIR)
     DATA_DIR: str = str(_BASE_DIR / "data")
+    MEDIA_DIR: str = str(_BASE_DIR / "data" / "media")
     RAW_DOCUMENTS_DIR: str = str(_BASE_DIR / "data" / "raw" / "uploads")
     PROCESSED_DOCUMENTS_DIR: str = str(_BASE_DIR / "data" / "processed")
     ENABLE_DEMO_DATA: bool = True
@@ -32,6 +33,8 @@ class Settings(BaseSettings):
 
     # ── Redis ─────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CACHE_PREFIX: str = "tcm"
+    SESSION_CACHE_TTL_SECONDS: int = 300
 
     # ── Elasticsearch ─────────────────────────────────────
     ES_HOSTS: list[str] = ["http://localhost:9200"]
@@ -52,6 +55,7 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str = ""
     LLM_MODEL: str = "qwen-max"
     LLM_REWRITE_MODEL: str = "qwen-plus"
+    LLM_VISION_MODEL: str = "qwen-vl-plus"
     LLM_TIMEOUT: int = 15
     EMBEDDING_MODEL: str = "text-embedding-v3"
     EMBEDDING_DIM: int = 1024
@@ -98,6 +102,10 @@ class Settings(BaseSettings):
     HISTORY_SUMMARY_INTERVAL: int = 5
 
     # ── 限流 ──────────────────────────────────────────────
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_BURST_WINDOW_SECONDS: int = 10
+    RATE_LIMIT_AUTH: int = 20      # req/min
     RATE_LIMIT_USER: int = 60       # req/min
     RATE_LIMIT_QA: int = 10         # req/min
     RATE_LIMIT_ADMIN: int = 120     # req/min

@@ -29,10 +29,12 @@ from app.services.followup_service import (
 )
 from app.services.followup_question_service import followup_question_service
 from app.services.light_agent_service import light_agent_service
+from app.services.portrait_memory_service import portrait_memory_service
 from app.services.prompt_service import prompt_service
 from app.services.query_rewrite_service import rewrite_query, rewrite_query_async
 from app.services.rerank_service import rerank_service
 from app.services.retrieval_service import retrieval_service
+from app.services.session_cache_service import session_cache_service
 
 logger = get_logger(__name__)
 
@@ -106,14 +108,12 @@ def _compose_case_profile_context(
     return "；".join(part for part in parts if part) or None
 
 
-def _render_followup_card(question: str, *, current_round: int, max_rounds: int) -> str:
-    return "\n".join(
-        [
-            f"第 {current_round} 问 / 共 {max_rounds} 问",
-            question.strip(),
-            "直接回复这一项就可以，我收到后继续。",
-        ]
-    )
+def _render_followup_card(questions: list[str], *, round_count: int, max_rounds: int) -> str:
+    lines = [f"共需补充 {len(questions)} 项信息："]
+    for i, q in enumerate(questions, 1):
+        lines.append(f"{i}. {q.strip()}")
+    lines.append("按编号逐条回复即可，我收到后继续。")
+    return "\n".join(lines)
 
 
 async def _build_conversation_history(
@@ -123,19 +123,66 @@ async def _build_conversation_history(
     user_id: int,
     limit: int = 6,
 ) -> list[dict[str, str]]:
+    cached_history = await session_cache_service.get_conversation_history(
+        user_id=user_id,
+        session_id=session_id,
+        limit=limit,
+    )
+    if cached_history is not None:
+        return cached_history
+
     messages = await session_repo.list_recent_messages(
         db,
         session_id=session_id,
         user_id=user_id,
         limit=limit,
     )
-    return [
+    history = [
         {
             "role": _role_value(message.role),
             "content": message.content,
         }
         for message in messages
     ]
+    await session_cache_service.set_conversation_history(
+        user_id=user_id,
+        session_id=session_id,
+        limit=limit,
+        history=history,
+    )
+    return history
+
+
+async def _invalidate_session_cache(*, user_id: int, session_id: str) -> None:
+    await session_cache_service.invalidate_session(user_id=user_id, session_id=session_id)
+
+
+async def _warm_conversation_history_cache(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    session_id: str,
+    limit: int = 6,
+) -> None:
+    messages = await session_repo.list_recent_messages(
+        db,
+        session_id=session_id,
+        user_id=user_id,
+        limit=limit,
+    )
+    history = [
+        {
+            "role": _role_value(message.role),
+            "content": message.content,
+        }
+        for message in messages
+    ]
+    await session_cache_service.set_conversation_history(
+        user_id=user_id,
+        session_id=session_id,
+        limit=limit,
+        history=history,
+    )
 
 
 async def stream_chat(
@@ -154,14 +201,110 @@ async def stream_chat(
         yield _format_sse("error", {"code": "SESSION_NOT_FOUND", "message": "会话不存在"})
         return
 
-    stored_case_profile_summary = case_profile_summary or session.case_profile_summary
+    case_profile = None
+    if session.case_profile_id:
+        case_profile = await case_profile_repo.get_by_id_and_user_id(
+            db,
+            profile_id=session.case_profile_id,
+            user_id=user_id,
+        )
+
+    stored_case_profile_summary = (
+        case_profile_summary
+        or build_case_profile_summary(case_profile)
+        or session.case_profile_summary
+    )
     stored_consultation_context = session.consultation_context or {}
+    stored_syndrome_memory = portrait_memory_service.normalize_syndrome_memory(session.syndrome_memory or [])
+    long_term_profile = portrait_memory_service.build_long_term_profile(
+        case_profile,
+        allergy_history=getattr(case_profile, "allergy_history", None),
+        medical_history=getattr(case_profile, "medical_history", None),
+    )
 
     try:
         effective_query = query
         clarification_context: str | None = None
 
         preview_plan = light_agent_service.plan(query, history_summary=session.summary)
+        if preview_plan.answer_style != "chat" and not (session.followup_state or {}).get("active"):
+            recovery_followup = portrait_memory_service.build_recovery_followup(
+                query=query,
+                syndrome_memory=stored_syndrome_memory,
+            )
+            if recovery_followup:
+                user_message = await session_repo.add_message(
+                    db,
+                    session_id=session_id,
+                    role=MessageRole.USER,
+                    content=query,
+                    kind="user",
+                    rewritten_query=query,
+                )
+                updated_syndrome_memory = portrait_memory_service.update_session_syndrome_memory(
+                    syndrome_memory=stored_syndrome_memory,
+                    latest_query=query,
+                    answer_style=preview_plan.answer_style,
+                    consultation_context=stored_consultation_context,
+                    source_message_id=user_message.message_id,
+                )
+                await db.commit()
+                await _invalidate_session_cache(user_id=user_id, session_id=session_id)
+                yield _format_sse("start", {"session_id": session_id, "message_id": ""})
+                full_followup = _render_followup_card(
+                    [recovery_followup["question"]],
+                    round_count=1,
+                    max_rounds=1,
+                )
+                for piece in split_answer_for_stream(full_followup, chunk_size=32):
+                    yield _format_sse("chunk", {"content": piece})
+                assistant_message = await session_repo.add_message(
+                    db,
+                    session_id=session_id,
+                    role=MessageRole.ASSISTANT,
+                    content=full_followup,
+                    kind="followup",
+                    citations=[],
+                    latency_ms=0,
+                )
+                await session_repo.update_session(
+                    db,
+                    session=session,
+                    case_profile_summary=stored_case_profile_summary,
+                    consultation_context=stored_consultation_context,
+                    syndrome_memory=updated_syndrome_memory,
+                    followup_state={
+                        "active": True,
+                        "domain": "tonify_guardrail",
+                        "original_query": query,
+                        "latest_query": query,
+                        "required_targets": ["recovery_status"],
+                        "collected": {},
+                        "round_count": 1,
+                        "asked_targets": ["recovery_status"],
+                        "last_asked_target": "recovery_status",
+                        "guardrail_note": recovery_followup["note"],
+                    },
+                )
+                await db.commit()
+                await _invalidate_session_cache(user_id=user_id, session_id=session_id)
+                await _warm_conversation_history_cache(
+                    db,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                yield _format_sse("citation", {"citations": []})
+                yield _format_sse(
+                    "done",
+                    {
+                        "message_id": assistant_message.message_id,
+                        "message_kind": "followup",
+                        "total_tokens": max(1, len(full_followup)),
+                        "latency_ms": 0,
+                    },
+                )
+                return
+
         if preview_plan.answer_style != "chat":
             preview_bundle = rewrite_query(query, history_summary=session.summary)
             followup_decision = followup_service.process_turn(
@@ -186,7 +329,7 @@ async def stream_chat(
             )
 
             if followup_decision.need_follow_up and followup_decision.follow_up_message:
-                await session_repo.add_message(
+                user_message = await session_repo.add_message(
                     db,
                     session_id=session_id,
                     role=MessageRole.USER,
@@ -194,21 +337,36 @@ async def stream_chat(
                     kind="user",
                     rewritten_query=query,
                 )
+                updated_syndrome_memory = portrait_memory_service.update_session_syndrome_memory(
+                    syndrome_memory=stored_syndrome_memory,
+                    latest_query=query,
+                    answer_style=preview_plan.answer_style,
+                    consultation_context=updated_consultation_context,
+                    source_message_id=user_message.message_id,
+                )
                 # Release SQLite write lock before keeping the SSE response open.
                 await db.commit()
+                await _invalidate_session_cache(user_id=user_id, session_id=session_id)
                 yield _format_sse("start", {"session_id": session_id, "message_id": ""})
-                fallback_lines = (followup_decision.follow_up_message or "").splitlines()
-                fallback_question = fallback_lines[1].strip() if len(fallback_lines) >= 2 else "请继续补充这一项。"
-                followup_question = await followup_question_service.generate_question(
+                question_targets = followup_decision.question_targets or []
+                if not question_targets and followup_decision.question_target:
+                    question_targets = [followup_decision.question_target]
+                if not question_targets:
+                    question_targets = [(session.followup_state or {}).get("last_asked_target") or "primary_symptom"]
+                    if isinstance(question_targets[0], str) and question_targets[0]:
+                        question_targets = [question_targets[0]]
+                    else:
+                        question_targets = ["primary_symptom"]
+                followup_questions = await followup_question_service.generate_questions(
                     domain=followup_decision.domain or "symptom",
-                    target=followup_decision.question_target or (session.followup_state or {}).get("last_asked_target") or "primary_symptom",
+                    targets=question_targets,
                     collected_slots=followup_decision.collected_slots,
                     latest_query=query,
                     asked_targets=list((session.followup_state or {}).get("asked_targets", [])),
                 )
                 full_followup = _render_followup_card(
-                    followup_question or fallback_question,
-                    current_round=followup_decision.round_count or int((session.followup_state or {}).get("round_count", 1)),
+                    followup_questions,
+                    round_count=followup_decision.round_count or int((session.followup_state or {}).get("round_count", 1)),
                     max_rounds=3,
                 )
                 for piece in split_answer_for_stream(full_followup, chunk_size=32):
@@ -227,9 +385,16 @@ async def stream_chat(
                     session=session,
                     case_profile_summary=stored_case_profile_summary,
                     consultation_context=updated_consultation_context,
+                    syndrome_memory=updated_syndrome_memory,
                     followup_state=session.followup_state or {},
                 )
                 await db.commit()
+                await _invalidate_session_cache(user_id=user_id, session_id=session_id)
+                await _warm_conversation_history_cache(
+                    db,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
                 yield _format_sse("citation", {"citations": []})
                 yield _format_sse(
                     "done",
@@ -245,6 +410,13 @@ async def stream_chat(
             effective_query = followup_decision.effective_query or query
             clarification_context = followup_decision.clarification_context
             stored_consultation_context = updated_consultation_context
+            stored_syndrome_memory = portrait_memory_service.update_session_syndrome_memory(
+                syndrome_memory=stored_syndrome_memory,
+                latest_query=query,
+                answer_style=preview_plan.answer_style,
+                consultation_context=stored_consultation_context,
+                source_message_id=None,
+            )
 
         tool_plan = light_agent_service.plan(effective_query, history_summary=session.summary)
         logger.info(
@@ -264,16 +436,31 @@ async def stream_chat(
                 stored_consultation_context,
                 clarification_context,
             )
-            consult_generation_context: dict[str, str] = {}
+            consult_generation_context: dict[str, Any] = {}
             if tool_plan.answer_style == "consult":
                 live_context = await flash_call_environment_mcp(preferred_location=user_location)
+                short_term_memories = portrait_memory_service.retrieve_relevant_short_term_memories(
+                    query=effective_query,
+                    syndrome_memory=stored_syndrome_memory,
+                )
                 consult_generation_context = {
                     "environmental_context": live_context.get(
                         "environmental_context",
                         "时间：未知 | 位置：未提供 | 天气：未获取",
                     ),
                     "clarification_context": clarification_context or "",
+                    "long_term_profile": long_term_profile,
+                    "short_term_syndrome_memories": short_term_memories,
+                    "short_term_guardrail": portrait_memory_service.build_short_term_guardrail(
+                        query=effective_query,
+                        syndrome_memory=stored_syndrome_memory,
+                    ),
                 }
+                logger.info(
+                    "syndrome_memory_retrieval: style=%s count=%d",
+                    tool_plan.answer_style,
+                    len(short_term_memories),
+                )
 
             conversation_history = await _build_conversation_history(
                 db,
@@ -289,7 +476,7 @@ async def stream_chat(
                 generation_context=consult_generation_context,
             )
 
-            await session_repo.add_message(
+            user_message = await session_repo.add_message(
                 db,
                 session_id=session_id,
                 role=MessageRole.USER,
@@ -297,8 +484,16 @@ async def stream_chat(
                 kind="user",
                 rewritten_query=query,
             )
+            updated_syndrome_memory = portrait_memory_service.update_session_syndrome_memory(
+                syndrome_memory=stored_syndrome_memory,
+                latest_query=query,
+                answer_style=tool_plan.answer_style,
+                consultation_context=stored_consultation_context,
+                source_message_id=user_message.message_id,
+            )
             # Persist the user message before the potentially long LLM stream starts.
             await db.commit()
+            await _invalidate_session_cache(user_id=user_id, session_id=session_id)
 
             yield _format_sse("start", {"session_id": session_id, "message_id": ""})
 
@@ -338,9 +533,16 @@ async def stream_chat(
                 ),
                 case_profile_summary=stored_case_profile_summary,
                 consultation_context=stored_consultation_context,
+                syndrome_memory=updated_syndrome_memory,
                 followup_state={},
             )
             await db.commit()
+            await _invalidate_session_cache(user_id=user_id, session_id=session_id)
+            await _warm_conversation_history_cache(
+                db,
+                user_id=user_id,
+                session_id=session_id,
+            )
             yield _format_sse("citation", {"citations": []})
             yield _format_sse(
                 "done",
@@ -418,19 +620,31 @@ async def stream_chat(
         generation_context = dietary_generation_context_service.build_context(
             user_query=effective_query,
             case_profile_summary=effective_case_profile_summary,
+            long_term_profile=long_term_profile,
             retrieved_chunks=reranked,
             weather_mcp_data=weather_mcp_data,
             live_context=live_context,
         )
         if clarification_context:
             generation_context["clarification_context"] = clarification_context
+        short_term_memories = portrait_memory_service.retrieve_relevant_short_term_memories(
+            query=effective_query,
+            syndrome_memory=stored_syndrome_memory,
+        )
+        generation_context["long_term_profile"] = long_term_profile
+        generation_context["short_term_syndrome_memories"] = short_term_memories
+        generation_context["short_term_guardrail"] = portrait_memory_service.build_short_term_guardrail(
+            query=effective_query,
+            syndrome_memory=stored_syndrome_memory,
+        )
         logger.info(
-            "generation_context: env=%s, location=%s, solar_term=%s, constitution=%s, ancient_chunks=%d, weather_source=%s",
+            "generation_context: env=%s, location=%s, solar_term=%s, constitution=%s, ancient_chunks=%d, syndrome_memories=%d, weather_source=%s",
             generation_context.get("environmental_context", "时间：未知 | 位置：未提供 | 天气：未获取"),
             generation_context["weather_mcp_data"].get("location", "未提供"),
             generation_context.get("current_solar_term", "未提供"),
             generation_context.get("user_constitution", "未提供"),
             len(generation_context.get("retrieved_ancient_chunks", [])),
+            len(short_term_memories),
             generation_context["weather_mcp_data"].get("source", "unknown"),
         )
 
@@ -448,7 +662,7 @@ async def stream_chat(
             generation_context=generation_context,
         )
 
-        await session_repo.add_message(
+        user_message = await session_repo.add_message(
             db,
             session_id=session_id,
             role=MessageRole.USER,
@@ -460,9 +674,17 @@ async def stream_chat(
                 else query
             ),
         )
+        updated_syndrome_memory = portrait_memory_service.update_session_syndrome_memory(
+            syndrome_memory=stored_syndrome_memory,
+            latest_query=query,
+            answer_style=tool_plan.answer_style,
+            consultation_context=stored_consultation_context,
+            source_message_id=user_message.message_id,
+        )
         # Persist the user turn before any long-running generation work to avoid holding
         # a SQLite write transaction for the full SSE lifetime.
         await db.commit()
+        await _invalidate_session_cache(user_id=user_id, session_id=session_id)
 
         yield _format_sse("start", {"session_id": session_id, "message_id": ""})
 
@@ -509,9 +731,16 @@ async def stream_chat(
             summary=f"最近问题聚焦：{query_bundle.normalized_query[:36]}",
             case_profile_summary=stored_case_profile_summary,
             consultation_context=stored_consultation_context,
+            syndrome_memory=updated_syndrome_memory,
             followup_state={},
         )
         await db.commit()
+        await _invalidate_session_cache(user_id=user_id, session_id=session_id)
+        await _warm_conversation_history_cache(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+        )
 
         yield _format_sse("citation", {"citations": citation_dicts})
         yield _format_sse(
@@ -558,6 +787,7 @@ class ChatService:
             case_profile_summary=build_case_profile_summary(profile),
             consultation_context={},
         )
+        await session_cache_service.invalidate_user_sessions(user_id=user_id)
         return _serialize_session(session).model_dump()
 
     async def list_sessions(
@@ -568,6 +798,14 @@ class ChatService:
         page: int = 1,
         size: int = 50,
     ) -> tuple[list[dict[str, Any]], int]:
+        cached = await session_cache_service.get_session_list(
+            user_id=user_id,
+            page=page,
+            size=size,
+        )
+        if cached is not None:
+            return cached
+
         sessions, total = await session_repo.list_sessions(
             db,
             user_id=user_id,
@@ -575,6 +813,13 @@ class ChatService:
             size=size,
         )
         items = [_serialize_session(session).model_dump() for session in sessions]
+        await session_cache_service.set_session_list(
+            user_id=user_id,
+            page=page,
+            size=size,
+            items=items,
+            total=total,
+        )
         return items, total
 
     async def list_messages(
@@ -588,12 +833,25 @@ class ChatService:
         if session is None:
             raise AppException(code=30004, message="会话不存在", http_status=404)
 
+        cached_messages = await session_cache_service.get_message_list(
+            user_id=user_id,
+            session_id=session_id,
+        )
+        if cached_messages is not None:
+            return cached_messages
+
         messages = await session_repo.list_messages(
             db,
             session_id=session_id,
             user_id=user_id,
         )
-        return [_serialize_message(message).model_dump() for message in messages]
+        items = [_serialize_message(message).model_dump() for message in messages]
+        await session_cache_service.set_message_list(
+            user_id=user_id,
+            session_id=session_id,
+            items=items,
+        )
+        return items
 
     async def build_answer_payload(
         self,
@@ -630,6 +888,7 @@ class ChatService:
         # The /stream endpoint returns a StreamingResponse, so committing here prevents
         # the request-scoped transaction from holding a write lock for the whole stream.
         await db.commit()
+        await _invalidate_session_cache(user_id=user_id, session_id=session_id)
 
         return {
             "user_id": user_id,

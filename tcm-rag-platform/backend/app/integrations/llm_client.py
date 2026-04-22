@@ -1,8 +1,10 @@
-"""DashScope LLM API Client (qwen-max / qwen-plus)"""
+"""DashScope LLM API Client (qwen-max / qwen-plus / qwen-vl-plus)"""
 from __future__ import annotations
 
+import asyncio
+
 import dashscope
-from dashscope import Generation
+from dashscope import Generation, MultiModalConversation
 from typing import Any, AsyncGenerator
 from app.core.config import settings
 from app.core.logger import get_logger
@@ -39,6 +41,7 @@ class LLMClient:
         dashscope.api_key = settings.DASHSCOPE_API_KEY
         self.model = settings.LLM_MODEL
         self.rewrite_model = settings.LLM_REWRITE_MODEL
+        self.vision_model = settings.LLM_VISION_MODEL
         self.timeout = settings.LLM_TIMEOUT
 
     @staticmethod
@@ -121,6 +124,39 @@ class LLMClient:
                                                 top_p=top_p,
                                                 max_tokens=max_tokens):
             yield chunk
+
+    # ── vision / image analysis ─────────────────────────────
+    async def analyze_image(self, image_path: str, prompt: str,
+                            model: str | None = None, max_tokens: int = 2000) -> str:
+        """Analyze an image using a DashScope vision-language model."""
+        self._ensure_api_key()
+        target_model = model or self.vision_model
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"image": str(image_path)},
+                    {"text": prompt},
+                ],
+            }
+        ]
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: MultiModalConversation.call(
+                model=target_model,
+                messages=messages,
+                max_tokens=max_tokens,
+                result_format='message',
+            ),
+        )
+        if response.status_code == 200:
+            content = response.output.choices[0].message.content
+            # content can be a list of dicts for vision models
+            if isinstance(content, list):
+                return content[0].get("text", "")
+            return content
+        raise RuntimeError(f"Vision model error: {response.code} - {response.message}")
 
 
 llm_client = LLMClient()

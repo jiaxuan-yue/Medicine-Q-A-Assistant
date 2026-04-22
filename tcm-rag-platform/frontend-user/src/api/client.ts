@@ -9,12 +9,17 @@ const client = axios.create({
   },
 });
 
-// Request interceptor: attach Bearer token
+// Request interceptor: attach Bearer token and handle FormData Content-Type
 client.interceptors.request.use(
   (config) => {
     const token = sessionStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Delete the default JSON Content-Type so axios auto-generates
+    // the correct boundary for multipart/form-data uploads
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
     }
     return config;
   },

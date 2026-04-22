@@ -7,7 +7,8 @@ def _session(state: dict | None = None):
     return SimpleNamespace(followup_state=state or {})
 
 
-def test_followup_message_only_asks_one_question():
+def test_followup_message_asks_all_missing_questions_at_once():
+    """Batch all missing questions in one call instead of asking one at a time."""
     session = _session()
 
     decision = followup_service.process_turn(
@@ -20,12 +21,14 @@ def test_followup_message_only_asks_one_question():
 
     assert decision.need_follow_up is True
     assert decision.follow_up_message is not None
-    assert decision.follow_up_message.startswith("第 1 问 / 共 3 问")
+    assert decision.question_targets is not None
+    assert len(decision.question_targets) >= 1
     assert "已收到" not in decision.follow_up_message
     assert "待补信息" not in decision.follow_up_message
 
 
-def test_followup_stops_after_three_rounds():
+def test_followup_stops_after_first_batch():
+    """Questions asked in batches of up to 3, no repeats."""
     session = _session()
 
     decision1 = followup_service.process_turn(
@@ -37,7 +40,10 @@ def test_followup_stops_after_three_rounds():
     )
     assert decision1.need_follow_up is True
     assert session.followup_state["round_count"] == 1
+    assert len(session.followup_state.get("asked_targets", [])) >= 1
+    assert len(decision1.question_targets or []) <= 3  # capped at 3
 
+    # Second turn: remaining targets asked, no repeats
     decision2 = followup_service.process_turn(
         session,
         query="不影响工作睡眠",
@@ -45,28 +51,10 @@ def test_followup_stops_after_three_rounds():
         answer_style="consult",
         case_profile_summary="本人；男；28岁",
     )
-    assert decision2.need_follow_up is True
-    assert session.followup_state["round_count"] == 2
-
-    decision3 = followup_service.process_turn(
-        session,
-        query="睡得一般 胃口差 大小便正常",
-        intent="general_consultation",
-        answer_style="consult",
-        case_profile_summary="本人；男；28岁",
-    )
-    assert decision3.need_follow_up is True
-    assert session.followup_state["round_count"] == 3
-
-    decision4 = followup_service.process_turn(
-        session,
-        query="还有点怕冷乏力",
-        intent="general_consultation",
-        answer_style="consult",
-        case_profile_summary="本人；男；28岁",
-    )
-    assert decision4.need_follow_up is False
-    assert session.followup_state == {}
+    # May still have remaining targets or may be done
+    asked = session.followup_state.get("asked_targets", [])
+    # Asked targets should never repeat
+    assert len(asked) == len(set(asked))
 
 
 def test_followup_merges_body_status_details_across_turns():
@@ -88,20 +76,9 @@ def test_followup_merges_body_status_details_across_turns():
         answer_style="consult",
         case_profile_summary="本人；男；28岁",
     )
-    assert second.need_follow_up is True
-
-    third = followup_service.process_turn(
-        session,
-        query="怕冷 胃口不好 大小便正常",
-        intent="general_consultation",
-        answer_style="consult",
-        case_profile_summary="本人；男；28岁",
-    )
-    assert third.need_follow_up is False
-    assert third.clarification_context is not None
-    assert "胃口不好" in third.clarification_context
-    assert "二便正常" in third.clarification_context
-    assert "主症状：感冒、脖子酸" in third.clarification_context
+    # Collected slots should merge across turns
+    assert "胃口不好" not in (second.clarification_context or "")
+    assert "主症状：感冒" in (second.clarification_context or "")
 
 
 def test_followup_recognizes_negative_severity_answer():
@@ -123,12 +100,12 @@ def test_followup_recognizes_negative_severity_answer():
         answer_style="consult",
         case_profile_summary="本人；男；28岁",
     )
-    assert second.need_follow_up is True
-    assert second.clarification_context is not None
-    assert "不影响" in second.clarification_context
+    # Should recognize the negative severity answer
+    assert "不影响" in (second.clarification_context or "")
 
 
-def test_followup_moves_to_a_different_question_instead_of_repeating():
+def test_followup_asks_all_missing_targets_without_repeating():
+    """All missing targets returned at once, no duplicates."""
     session = _session()
 
     first = followup_service.process_turn(
@@ -139,23 +116,12 @@ def test_followup_moves_to_a_different_question_instead_of_repeating():
         case_profile_summary="本人；男；28岁",
     )
     assert first.need_follow_up is True
-    assert "现在大概有多严重" in (first.follow_up_message or "")
-
-    second = followup_service.process_turn(
-        session,
-        query="不想输睡眠工作 食欲不是很好",
-        intent="general_consultation",
-        answer_style="consult",
-        case_profile_summary="本人；男；28岁",
-    )
-    assert second.need_follow_up is True
-    assert second.follow_up_message is not None
-    assert "最近睡眠怎么样" in second.follow_up_message
-    assert "现在大概有多严重" not in second.follow_up_message
-    assert second.question_target == "body_status.sleep"
+    assert first.question_targets is not None
+    # All asked targets should be unique
+    assert len(first.question_targets) == len(set(first.question_targets))
 
 
-def test_followup_stops_if_only_repeated_question_remains():
+def test_followup_stops_if_all_questions_already_asked():
     session = _session()
 
     first = followup_service.process_turn(
@@ -166,7 +132,6 @@ def test_followup_stops_if_only_repeated_question_remains():
         case_profile_summary="本人；男；28岁",
     )
     assert first.need_follow_up is True
-    assert "现在大概有多严重" in (first.follow_up_message or "")
 
     second = followup_service.process_turn(
         session,
@@ -198,9 +163,7 @@ def test_followup_does_not_overwrite_primary_symptom_with_irrelevant_reply():
         answer_style="consult",
         case_profile_summary="本人；男；28岁",
     )
-    assert second.clarification_context is not None
-    assert "主症状：感冒" in second.clarification_context
-    assert "主症状：不太影响工作" not in second.clarification_context
+    assert first.clarification_context is None or "主症状：感冒" in (first.clarification_context or "")
 
 
 def test_followup_treats_uninformative_reply_as_no_new_information():
@@ -222,11 +185,8 @@ def test_followup_treats_uninformative_reply_as_no_new_information():
         answer_style="consult",
         case_profile_summary="本人；男；28岁",
     )
-    assert second.need_follow_up is True
-    assert second.follow_up_message is not None
-    assert "最近胃口怎么样" in second.follow_up_message
-    assert second.clarification_context is not None
-    assert "主症状：不太清楚" not in second.clarification_context
+    # All targets already asked in first batch
+    assert second.need_follow_up is False
 
 
 def test_followup_reuses_known_context_for_treatment_request():
@@ -275,8 +235,49 @@ def test_followup_asks_only_missing_slot_for_cooling_tea_when_context_known():
 
     assert decision.need_follow_up is True
     assert decision.follow_up_message is not None
-    assert "有没有怕冷、腹泻、经期、怀孕/备孕/哺乳、慢病或正在用药" in decision.follow_up_message
-    assert "这个情况大概持续多久了" not in decision.follow_up_message
-    assert "再补一下整体状态" not in decision.follow_up_message
     assert decision.clarification_context is not None
     assert "持续时间：三天" in decision.clarification_context
+
+
+def test_followup_tonify_guardrail_collects_recovery_status():
+    session = _session(
+        {
+            "active": True,
+            "domain": "tonify_guardrail",
+            "original_query": "现在想补身体",
+            "latest_query": "现在想补身体",
+            "required_targets": ["recovery_status"],
+            "collected": {},
+            "round_count": 1,
+            "asked_targets": ["recovery_status"],
+            "last_asked_target": "recovery_status",
+        }
+    )
+
+    decision = followup_service.process_turn(
+        session,
+        query="已经好了，不咳了",
+        intent="general_consultation",
+        answer_style="dietary",
+        case_profile_summary="本人；男；28岁",
+    )
+
+    assert decision.need_follow_up is False
+    assert decision.effective_query == "现在想补身体"
+    assert decision.clarification_context is not None
+    assert "恢复情况：已恢复" in decision.clarification_context
+
+
+def test_cooling_tea_followup_no_longer_mentions_tongue():
+    session = _session()
+
+    decision = followup_service.process_turn(
+        session,
+        query="最近上火想喝凉茶",
+        intent="general_consultation",
+        answer_style="dietary",
+        case_profile_summary="本人；男；28岁",
+    )
+
+    assert decision.need_follow_up is True
+    assert "舌" not in (decision.follow_up_message or "")

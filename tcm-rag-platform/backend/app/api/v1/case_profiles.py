@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -48,3 +48,20 @@ async def update_case_profile(
         payload,
     )
     return success_response(data=data, message="角色档案更新成功")
+
+
+@router.post("/{profile_id}/tongue-image")
+async def upload_case_profile_tongue_image(
+    profile_id: int,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await case_profile_service.upload_tongue_image(
+        db,
+        case_profile_repo,
+        int(current_user["sub"]),
+        profile_id,
+        file,
+    )
+    return success_response(data=data, message="舌像上传成功")

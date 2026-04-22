@@ -58,8 +58,10 @@ class PromptService:
         Returns:
             A list of message dicts: [{"role": ..., "content": ...}]
         """
+        system_prompt = self._compose_system_prompt(generation_context)
+
         if answer_style == "chat":
-            messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+            messages: list[dict] = [{"role": "system", "content": system_prompt}]
             if conversation_history:
                 for msg in conversation_history[-4:]:
                     messages.append({"role": msg["role"], "content": msg["content"]})
@@ -80,7 +82,7 @@ class PromptService:
             return messages
 
         if answer_style == "consult":
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            messages = [{"role": "system", "content": system_prompt}]
             if conversation_history:
                 for msg in conversation_history[-6:]:
                     messages.append({"role": msg["role"], "content": msg["content"]})
@@ -134,7 +136,7 @@ class PromptService:
             context_block = "（当前未检索到相关参考内容）"
 
         # --- assemble messages ---
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages: list[dict] = [{"role": "system", "content": system_prompt}]
 
         # inject conversation history (keep recent turns)
         if conversation_history:
@@ -215,6 +217,82 @@ class PromptService:
             f"识别实体：{entities}\n"
             f"检索上下文：\n{context_block}"
         )
+
+    def _compose_system_prompt(self, generation_context: dict | None) -> str:
+        generation_context = generation_context or {}
+        sections = [SYSTEM_PROMPT]
+
+        long_term_profile = generation_context.get("long_term_profile") or {}
+        short_term_memories = generation_context.get("short_term_syndrome_memories") or []
+        short_term_guardrail = generation_context.get("short_term_guardrail") or ""
+
+        sections.append(
+            "## 用户长期体质画像\n"
+            "长期画像代表相对稳定的体质与禁忌底盘；若本轮补充与长期画像冲突，优先相信本轮补充。"
+        )
+        sections.append(self._build_long_term_profile_block(long_term_profile))
+
+        sections.append(
+            "## 会话短期证候记忆\n"
+            "这里只表示最近几轮的症候变化，必须同时参考状态标签：`当前未过期` 表示仍可作为近期判断依据，"
+            "`已恢复` 不能当成当前症状，`已过期` 只能作为弱提示。"
+        )
+        sections.append(self._build_short_term_memory_block(short_term_memories))
+
+        if short_term_guardrail:
+            sections.append(f"## 短期护栏\n{short_term_guardrail}")
+
+        return "\n\n".join(section for section in sections if section)
+
+    @staticmethod
+    def _build_long_term_profile_block(profile: dict) -> str:
+        if not profile:
+            return "（暂无长期体质画像，建议首次做体质测评）"
+
+        top_scores = profile.get("top_scores") or []
+        score_text = "、".join(f"{name}{score}分" for name, score in top_scores if score > 0) or "暂无明确评分"
+        primary = profile.get("primary_constitution") or "未明确"
+        secondary = "、".join(profile.get("secondary_constitutions") or []) or "无"
+        allergies = "、".join(profile.get("allergy_history") or []) or "未记录"
+        chronic = "、".join(profile.get("chronic_symptoms") or []) or "未记录"
+        restrictions = "、".join(profile.get("dietary_restrictions") or []) or "未记录"
+        assessed_at = profile.get("last_assessed_at") or "未记录"
+        refresh_hint = profile.get("refresh_hint") or "建议结合反馈持续微调"
+        tongue_summary = "；".join(
+            part
+            for part in [
+                profile.get("tongue_color"),
+                profile.get("tongue_coating"),
+                profile.get("tongue_shape"),
+                profile.get("tongue_constitution_hint"),
+            ]
+            if part
+        ) or "未记录"
+        return "\n".join(
+            [
+                f"- 主体质：{primary}",
+                f"- 兼具体质：{secondary}",
+                f"- 九种体质得分Top：{score_text}",
+                f"- 过敏史：{allergies}",
+                f"- 长期慢性症状：{chronic}",
+                f"- 饮食禁忌：{restrictions}",
+                f"- 舌诊记录：{tongue_summary}",
+                f"- 最近测评：{assessed_at}",
+                f"- 维护提示：{refresh_hint}",
+            ]
+        )
+
+    @staticmethod
+    def _build_short_term_memory_block(memories: list[dict]) -> str:
+        if not memories:
+            return "（暂无短期证候记忆）"
+        lines = []
+        for item in memories[:4]:
+            summary = item.get("summary") or "近期不适"
+            status = item.get("status_label") or item.get("status") or "状态未知"
+            freshness = item.get("freshness_hint") or "时间未知"
+            lines.append(f"- [{status} | {freshness}] {summary}")
+        return "\n".join(lines)
 
 
 prompt_service = PromptService()
