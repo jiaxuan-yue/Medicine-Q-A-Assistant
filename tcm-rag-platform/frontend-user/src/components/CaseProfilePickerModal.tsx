@@ -5,7 +5,28 @@ import { useNavigate } from 'react-router-dom';
 import { useCaseProfilesStore } from '../stores/caseProfilesStore';
 import { useChatStore } from '../stores/chatStore';
 import { getApiErrorMessage } from '../utils/apiError';
+import type { CaseProfile } from '../types';
+import { hasQuestionnaireResult } from '../utils/constitutionQuestionnaire';
 import './CaseProfiles.css';
+
+const buildRoleSignals = (profile: CaseProfile) => {
+  const signals: Array<{ label: string; color?: string }> = [];
+  if (profile.constitution_primary) {
+    signals.push({ label: `主体质：${profile.constitution_primary}`, color: 'green' });
+  }
+  signals.push(
+    hasQuestionnaireResult(profile)
+      ? { label: '问卷结果已回写', color: 'gold' }
+      : { label: '待完成体质问卷' }
+  );
+  if (profile.tongue_coating) {
+    signals.push({ label: `舌苔：${profile.tongue_coating}` });
+  }
+  if (profile.constitution_assessed_at) {
+    signals.push({ label: `测评：${profile.constitution_assessed_at.slice(0, 10)}` });
+  }
+  return signals.slice(0, 4);
+};
 
 const CaseProfilePickerModal: React.FC = () => {
   const navigate = useNavigate();
@@ -78,6 +99,11 @@ const CaseProfilePickerModal: React.FC = () => {
                     </div>
                     <p>{profile.summary || '补充身高、体重、既往病史、当前用药等基础信息。'}</p>
                     <div className="caseprofiles-card-tags">
+                      {buildRoleSignals(profile).map((tag) => (
+                        <Tag key={`${profile.id}-${tag.label}`} color={tag.color}>
+                          {tag.label}
+                        </Tag>
+                      ))}
                       {(profile.tags || []).map((tag) => (
                         <Tag key={tag}>{tag}</Tag>
                       ))}

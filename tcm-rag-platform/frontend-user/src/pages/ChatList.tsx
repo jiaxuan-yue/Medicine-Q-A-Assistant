@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { List, Button, Typography, Layout, Empty } from 'antd';
+import { List, Button, Typography, Layout, Empty, Tag } from 'antd';
 import {
   PlusOutlined,
   LogoutOutlined,
@@ -10,10 +10,39 @@ import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../stores/chatStore';
 import { useAuthStore } from '../stores/authStore';
 import { useCaseProfilesStore } from '../stores/caseProfilesStore';
+import type { CaseProfile } from '../types';
+import { hasQuestionnaireResult } from '../utils/constitutionQuestionnaire';
 import './ChatList.css';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
+
+const buildProfileSignals = (profile: CaseProfile) => {
+  const signals: Array<{ label: string; color?: string }> = [];
+  if (profile.constitution_primary) {
+    signals.push({ label: `主体质：${profile.constitution_primary}`, color: 'green' });
+  }
+  if (hasQuestionnaireResult(profile)) {
+    signals.push({ label: '问卷结果已回写', color: 'gold' });
+  } else {
+    signals.push({ label: '待完成体质问卷' });
+  }
+  if (profile.constitution_assessed_at) {
+    signals.push({ label: `测评：${profile.constitution_assessed_at.slice(0, 10)}` });
+    const cycleDays = profile.constitution_reassessment_cycle_days ?? 90;
+    const assessedAt = new Date(profile.constitution_assessed_at);
+    if (!Number.isNaN(assessedAt.getTime())) {
+      const elapsedDays = (Date.now() - assessedAt.getTime()) / (1000 * 60 * 60 * 24);
+      if (elapsedDays >= cycleDays) {
+        signals.push({ label: '建议复评', color: 'volcano' });
+      }
+    }
+  }
+  if (profile.tongue_coating) {
+    signals.push({ label: `舌苔：${profile.tongue_coating}` });
+  }
+  return signals.slice(0, 4);
+};
 
 const ChatList: React.FC = () => {
   const navigate = useNavigate();
@@ -146,6 +175,13 @@ const ChatList: React.FC = () => {
                     <div className="chatlist-item-main">
                       <strong>{profile.profile_name}</strong>
                       <p>{profile.summary || '补充身高、体重、既往病史、当前用药等基础信息。'}</p>
+                      <div className="chatlist-profile-signals">
+                        {buildProfileSignals(profile).map((item) => (
+                          <Tag key={`${profile.id}-${item.label}`} color={item.color}>
+                            {item.label}
+                          </Tag>
+                        ))}
+                      </div>
                     </div>
                     <div className="chatlist-item-meta">
                       <div>{profile.updated_at ? new Date(profile.updated_at).toLocaleString('zh-CN') : '-'}</div>

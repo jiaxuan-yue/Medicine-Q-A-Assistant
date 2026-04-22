@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { caseProfilesApi } from '../api/caseProfiles';
 import type { CaseProfile, CaseProfilePayload } from '../types';
 
+interface UpdateProfileOptions {
+  keepManagerOpen?: boolean;
+}
+
 interface CaseProfilesState {
   profiles: CaseProfile[];
   activeProfileId: number | null;
@@ -14,7 +18,16 @@ interface CaseProfilesState {
 
   loadProfiles: () => Promise<CaseProfile[]>;
   createProfile: (payload: CaseProfilePayload) => Promise<CaseProfile>;
-  updateProfile: (profileId: number, payload: CaseProfilePayload) => Promise<CaseProfile>;
+  updateProfile: (
+    profileId: number,
+    payload: CaseProfilePayload,
+    options?: UpdateProfileOptions,
+  ) => Promise<CaseProfile>;
+  uploadTongueImage: (
+    profileId: number,
+    file: File,
+    options?: UpdateProfileOptions,
+  ) => Promise<CaseProfile>;
   setActiveProfileId: (profileId: number | null) => void;
   openManager: (profile?: CaseProfile | null) => void;
   closeManager: () => void;
@@ -71,7 +84,7 @@ export const useCaseProfilesStore = create<CaseProfilesState>((set, get) => ({
     }
   },
 
-  updateProfile: async (profileId, payload) => {
+  updateProfile: async (profileId, payload, options = {}) => {
     set({ saving: true });
     try {
       const res = await caseProfilesApi.update(profileId, payload);
@@ -79,8 +92,26 @@ export const useCaseProfilesStore = create<CaseProfilesState>((set, get) => ({
       set((state) => ({
         profiles: state.profiles.map((item) => (item.id === profile.id ? profile : item)),
         saving: false,
-        managerOpen: false,
-        editingProfile: null,
+        managerOpen: options.keepManagerOpen ? state.managerOpen : false,
+        editingProfile: options.keepManagerOpen ? profile : null,
+      }));
+      return profile;
+    } catch (error) {
+      set({ saving: false });
+      throw error;
+    }
+  },
+
+  uploadTongueImage: async (profileId, file, options = {}) => {
+    set({ saving: true });
+    try {
+      const res = await caseProfilesApi.uploadTongueImage(profileId, file);
+      const profile = res.data.data;
+      set((state) => ({
+        profiles: state.profiles.map((item) => (item.id === profile.id ? profile : item)),
+        saving: false,
+        managerOpen: options.keepManagerOpen ? state.managerOpen : false,
+        editingProfile: options.keepManagerOpen ? profile : null,
       }));
       return profile;
     } catch (error) {
