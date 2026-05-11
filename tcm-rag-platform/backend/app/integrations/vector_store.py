@@ -12,6 +12,7 @@ import numpy as np
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.integrations.embedding_client import embedding_client
+from app.services.local_recall_utils import rank_metadata_chunks
 
 logger = get_logger(__name__)
 
@@ -112,6 +113,50 @@ class VectorStore:
         except Exception as exc:
             logger.error("FAISS 搜索失败: %s", exc)
             return []
+
+    async def search_lexical(
+        self,
+        queries: list[str],
+        *,
+        entities: list[str] | None = None,
+        doc_title: str | None = None,
+        top_k: int = 20,
+    ) -> list[dict]:
+        """Search locally over persisted chunk metadata with exact lexical heuristics."""
+        if not self._metadata:
+            return []
+
+        filtered = self._metadata
+        if doc_title:
+            filtered = [item for item in self._metadata if item.get("doc_title") == doc_title]
+
+        ranked = rank_metadata_chunks(
+            filtered,
+            query_terms=queries,
+            entities=entities or [],
+            book_name=doc_title,
+            top_k=top_k,
+        )
+        if not ranked and doc_title:
+            ranked = rank_metadata_chunks(
+                self._metadata,
+                query_terms=queries,
+                entities=entities or [],
+                book_name=None,
+                top_k=top_k,
+            )
+
+        return [
+            {
+                "chunk_id": item.get("chunk_id", ""),
+                "doc_id": item.get("doc_id", ""),
+                "chunk_text": item.get("chunk_text", ""),
+                "doc_title": item.get("doc_title", ""),
+                "score": float(item.get("score", 0.0)),
+                "metadata": item.get("metadata", {}),
+            }
+            for item in ranked
+        ]
 
     # ── persistence ─────────────────────────────────────────
 

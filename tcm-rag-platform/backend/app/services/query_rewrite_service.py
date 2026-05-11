@@ -9,6 +9,7 @@ import re
 from app.core.config import settings
 from app.core.logger import get_logger
 from app.schemas.rag import QueryRewriteResult
+from app.services.local_recall_utils import extract_quoted_terms, filter_entity_candidates
 from app.services.text_normalization_service import to_simplified_medical
 
 logger = get_logger(__name__)
@@ -214,6 +215,8 @@ def _fallback_extract_entities(query: str) -> list[str]:
     """Extract entities using regex + keyword patterns — no hardcoded list."""
     entities: list[str] = []
 
+    entities.extend(extract_quoted_terms(query))
+
     # 方剂名：XX汤、XX散、XX丸、XX饮
     for m in re.finditer(r"([^\s，,。]{2,8}(?:汤|散|丸|饮|膏|丹|剂))", query):
         entities.append(m.group(1))
@@ -226,14 +229,7 @@ def _fallback_extract_entities(query: str) -> list[str]:
     for m in re.finditer(r"((?:头|腹|胃|胸|腰|颈|肩|膝|关[节])?(?:疼|痛|胀|咳|喘|泻|呕|吐|麻|酸|痒))", query):
         entities.append(m.group(1))
 
-    # 去重
-    seen: set[str] = set()
-    unique: list[str] = []
-    for e in entities:
-        if e not in seen:
-            seen.add(e)
-            unique.append(e)
-    return unique
+    return filter_entity_candidates(entities)
 
 
 # ── Public API ─────────────────────────────────────────────
@@ -260,6 +256,9 @@ def _rule_based_rewrite(query: str, history_summary: str | None = None) -> Query
     """Rule-based rewrite with LLM intent/entity extraction."""
     normalized = _normalize_query(query)
     intent, entities, book_name = _infer_query(query)
+    quoted_terms = extract_quoted_terms(query)
+    if quoted_terms:
+        entities = filter_entity_candidates([*entities, *quoted_terms])
 
     rewrite_queries = [normalized]
     if entities:
@@ -267,9 +266,15 @@ def _rule_based_rewrite(query: str, history_summary: str | None = None) -> Query
         if book_name:
             rewrite_queries.append(f"{book_name} {joined} 功效 记载")
             rewrite_queries.append(f"{book_name} {joined} 原文 描述")
+            rewrite_queries.append(f"{book_name} {joined} 内容 主治")
+            rewrite_queries.append(f"{book_name} <篇名>{entities[0]} 内容")
         else:
             rewrite_queries.append(f"{joined} 中医辨证 古籍依据")
             rewrite_queries.append(f"{joined} 经典出处 相关证候")
+            rewrite_queries.append(f"{joined} 主治 功效 用法")
+    elif book_name and _is_knowledge_lookup(query):
+        rewrite_queries.append(f"{book_name} 原文 记载")
+        rewrite_queries.append(f"{book_name} 内容 描述")
     if history_summary:
         rewrite_queries.append(f"{normalized} 结合上下文 {history_summary[:24]}")
 

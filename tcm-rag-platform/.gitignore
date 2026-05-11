@@ -21,6 +21,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 .venv/
+.venv-codex/
 venv/
 env/
 
@@ -30,6 +31,8 @@ logs/
 
 # Databases / runtime files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 *.pid

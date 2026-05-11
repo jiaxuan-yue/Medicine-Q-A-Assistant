@@ -46,7 +46,7 @@ class RetrievalService:
         """Run triple retrieval and return a RetrievalBundle dict.
 
         Returns:
-            {sparse_docs, dense_docs, graph_docs, fused_docs}
+            {sparse_docs, dense_docs, graph_docs, lexical_docs, fused_docs}
         """
         fusion_k = top_k or settings.FUSION_TOP_K
         queries = rewrite_result.rewrite_queries or [rewrite_result.normalized_query]
@@ -62,6 +62,10 @@ class RetrievalService:
             tasks["dense"] = tg.create_task(
                 self._dense_retrieve(rewrite_result.normalized_query, settings.DENSE_TOP_K, doc_title=book_name)
             )
+            if entities or book_name:
+                tasks["lexical"] = tg.create_task(
+                    self._lexical_retrieve(queries, entities, fusion_k, doc_title=book_name)
+                )
             if settings.GRAPH_RECALL_ENABLED and entities:
                 tasks["graph"] = tg.create_task(
                     self._graph_retrieve(entities, settings.GRAPH_TOP_K)
@@ -69,9 +73,10 @@ class RetrievalService:
 
         sparse_docs = tasks["sparse"].result()
         dense_docs = tasks["dense"].result()
+        lexical_docs = tasks.get("lexical", _EmptyResult()).result() if "lexical" in tasks else []
         graph_docs = tasks.get("graph", _EmptyResult()).result() if "graph" in tasks else []
 
-        fused_docs = await self._fuse_results(sparse_docs, dense_docs, graph_docs, fusion_k)
+        fused_docs = await self._fuse_results(sparse_docs, dense_docs, graph_docs, lexical_docs, fusion_k)
 
         # If all channels empty, fall back to in-memory keyword search
         if not fused_docs:
@@ -90,6 +95,7 @@ class RetrievalService:
             "sparse_docs": sparse_docs,
             "dense_docs": dense_docs,
             "graph_docs": graph_docs,
+            "lexical_docs": lexical_docs,
             "fused_docs": fused_docs,
         }
 
@@ -180,6 +186,30 @@ class RetrievalService:
             logger.warning("图谱检索失败，降级跳过: %s", exc)
             return []
 
+    async def _lexical_retrieve(
+        self,
+        queries: list[str],
+        entities: list[str],
+        top_k: int,
+        doc_title: str | None = None,
+    ) -> list[dict]:
+        """Local exact lexical recall over persisted FAISS metadata."""
+        if not self._vs.available:
+            return []
+        try:
+            hits = await self._vs.search_lexical(
+                queries,
+                entities=entities,
+                doc_title=doc_title,
+                top_k=top_k,
+            )
+            for hit in hits:
+                hit["source_type"] = "lexical"
+            return hits
+        except Exception as exc:
+            logger.warning("本地精确召回失败，降级跳过: %s", exc)
+            return []
+
     # ── RRF fusion ──────────────────────────────────────────
 
     async def _fuse_results(
@@ -187,6 +217,7 @@ class RetrievalService:
         sparse: list[dict],
         dense: list[dict],
         graph: list[dict],
+        lexical: list[dict],
         top_k: int,
     ) -> list[dict]:
         """Reciprocal Rank Fusion: score = sum(1 / (RRF_K + rank_i))."""
@@ -194,7 +225,7 @@ class RetrievalService:
         scores: dict[str, float] = defaultdict(float)
         doc_map: dict[str, dict] = {}
 
-        for channel_docs in (sparse, dense, graph):
+        for channel_docs in (sparse, dense, graph, lexical):
             for rank, doc in enumerate(channel_docs):
                 cid = doc.get("chunk_id", "")
                 if not cid:
